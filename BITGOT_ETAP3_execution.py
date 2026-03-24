@@ -1666,7 +1666,12 @@ class OmegaHealerDaemon:
         m   = re.search(r"no module named ['\"]?(\w+)", msg)
         if not m: return HealResult.FAILED, "Cannot determine package"
         pkg_import = m.group(1)
-        pip_pkg    = PACKAGE_MAP.get(pkg_import, pkg_import)
+
+        # Security Fix: Only allow installation of explicitly whitelisted packages
+        if pkg_import not in PACKAGE_MAP:
+            return HealResult.FAILED, f"Package {pkg_import} is not whitelisted for auto-installation"
+
+        pip_pkg = PACKAGE_MAP[pkg_import]
         if pip_pkg in self._dep_installing:
             return HealResult.COOLDOWN, "Already installing"
         self._dep_installing.add(pip_pkg)
