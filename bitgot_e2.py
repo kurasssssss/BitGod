@@ -65,6 +65,7 @@
 
 from __future__ import annotations
 from bitgot_e1 import *
+from bitgot_e1 import _MS, _TS, _NOW
 import copy
 import hashlib
 import threading
