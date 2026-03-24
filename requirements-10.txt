@@ -1,0 +1,24 @@
+# NEXUS PRIME 1000 — Zależności
+# Instalacja: pip install -r requirements.txt
+
+# Giełda i API
+ccxt==4.3.97
+ccxt[async]
+
+# ML & Numerics
+torch>=2.2.0
+numpy>=1.26.0
+pandas>=2.2.0
+scipy>=1.12.0
+
+# Asynchroniczność
+aiohttp>=3.9.0
+websockets>=12.0
+
+# Monitoring i logi
+rich>=13.7.0
+colorama>=0.4.6
+
+# Opcjonalne — dane rynkowe
+requests>=2.31.0
+python-dotenv>=1.0.0
