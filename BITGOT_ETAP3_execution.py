@@ -174,22 +174,29 @@ class DataFetcher:
         while self._running:
             t0 = _TS()
             try:
+                tasks = []
                 for i in range(0, len(self.symbols), self.TICKER_BATCH_SIZE):
                     batch = self.symbols[i:i + self.TICKER_BATCH_SIZE]
-                    tickers = await self.conn.fetch_tickers(batch)
+                    tasks.append(self.conn.fetch_tickers(batch))
+
+                if tasks:
+                    results = await asyncio.gather(*tasks)
                     lat = (_TS() - t0) * 1000
                     self._latency_ms.append(lat)
-                    for sym, tk in tickers.items():
-                        if not tk: continue
-                        last = float(tk.get("last") or 0)
-                        bid  = float(tk.get("bid")  or last * 0.9999)
-                        ask  = float(tk.get("ask")  or last * 1.0001)
-                        bv   = float(tk.get("baseVolume") or 0)
-                        av   = float(tk.get("baseVolume") or 0)
-                        side = "buy" if bv > av else "sell"
-                        if last > 0:
-                            self.mdc.update_tick(sym, last, bid, ask, bv, av, side)
-                    self._fetches += 1
+                    for tickers in results:
+                        if not isinstance(tickers, dict):
+                            continue
+                        for sym, tk in tickers.items():
+                            if not tk: continue
+                            last = float(tk.get("last") or 0)
+                            bid  = float(tk.get("bid")  or last * 0.9999)
+                            ask  = float(tk.get("ask")  or last * 1.0001)
+                            bv   = float(tk.get("baseVolume") or 0)
+                            av   = float(tk.get("baseVolume") or 0)
+                            side = "buy" if bv > av else "sell"
+                            if last > 0:
+                                self.mdc.update_tick(sym, last, bid, ask, bv, av, side)
+                        self._fetches += 1
             except Exception as e:
                 self._errors += 1
                 self._log.debug(f"Ticker loop: {e}")
