@@ -400,7 +400,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+        allow_origins=orchestrator.cfg.allowed_origins, allow_methods=["*"], allow_headers=["*"],
     )
 
     @app.get("/health")
