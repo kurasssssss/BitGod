@@ -76,11 +76,11 @@ from bitgot_e1 import (
     BitgetConnector, PairDiscovery, PairInfo, CapitalEngine,
     BITGOTDatabase, GlobalPortfolioManager, MarketDataCache,
     MathCore, StateVector, FeatureBuilder,
-    TOTAL_BOTS, MIN_CONFIDENCE, DATA_DIR, MODELS_DIR,
+    TOTAL_BOTS, MIN_CONFIDENCE, TARGET_WIN_RATE, DATA_DIR, MODELS_DIR,
     _TS, _MS, _NOW,
 )
 from bitgot_e2 import (
-    BotBrain, SwarmIntelligence, GlobalMetaPool,
+    SwarmIntelligence, MetaLearningHub as GlobalMetaPool, IntelligenceCore as BotBrain
 )
 from bitgot_e3 import (
     BitgotSystemE3, BotScout, DataFetcher,
@@ -647,12 +647,23 @@ class BITGOTOrchestrator:
         # ── 4. Build BotBrains ────────────────────────────────────────────────
         self._log.info("🧠 Building bot brains...")
         n = len(self.pairs)
+
+        # In bitgot_e2 we renamed IntelligenceCore to BotBrain via import mapping but it's an orchestrator.
+        # Actually it builds intelligence. Wait, BotBrain should be a dictionary of intelligence components or a wrapper.
+        # Let's instantiate BotBrain globally here as the IntelligenceCore and then build for each bot
+        self.bot_core = BotBrain(self.portfolio, self.db, self.cfg)
+
         for i, pair in enumerate(self.pairs):
             genome = BotGenome(bot_id=i)
             genome.normalize_weights()
-            meta   = self.meta_pool.get(pair.tier)
-            brain  = BotBrain(pair.symbol, i, pair.tier, genome, self.swarm, meta)
-            self.brains[i] = brain
+            brain  = self.bot_core.build_bot_intelligence(pair.symbol, i, pair.tier, genome, self.mdc)
+            # Store it inside a generic object or use brain directly
+            class _BrainWrapper:
+                def __init__(self, d):
+                    for k, v in d.items(): setattr(self, k, v)
+                    self.genome = genome
+                    self.tier = pair.tier
+            self.brains[i] = _BrainWrapper(brain)
             if i % 500 == 0:
                 self._log.info(f"  Built {i}/{n} brains...")
         self._log.info(f"✅ {len(self.brains)} brains ready")

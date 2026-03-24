@@ -2018,10 +2018,10 @@ class BITGOTDatabase:
         self._err_q:    List[OmegaError] = []
         self._heal_q:   List[HealAction] = []
         self._metric_q: List[Dict] = []
+        self._log = logging.getLogger("BITGOT·DB")
         self._init_schema()
         self._flush_thread = threading.Thread(target=self._batch_flush_loop, daemon=True)
         self._flush_thread.start()
-        self._log = logging.getLogger("BITGOT·DB")
 
     def _init_schema(self):
         self._conn.executescript("""
