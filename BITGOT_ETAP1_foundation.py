@@ -858,7 +858,7 @@ class BitgetConnector:
             try:
                 await self._rate_limit()
                 t0 = _TS()
-                result = await coro
+                result = await coro() if callable(coro) else await coro
                 lat = (_TS() - t0) * 1000
                 self._latency_ms.append(lat)
                 return result
@@ -889,7 +889,7 @@ class BitgetConnector:
     async def fetch_ticker(self, symbol: str) -> Dict:
         if not self._healthy: return {}
         return await self._safe_call(
-            self._ex.fetch_ticker(symbol), {}, f"ticker:{symbol}"
+            lambda: self._ex.fetch_ticker(symbol), {}, f"ticker:{symbol}"
         ) or {}
 
     async def fetch_tickers(self, symbols: Optional[List[str]] = None) -> Dict:
@@ -897,11 +897,11 @@ class BitgetConnector:
         try:
             if symbols:
                 return await self._safe_call(
-                    self._ex.fetch_tickers(symbols), {}, "tickers_batch"
+                    lambda: self._ex.fetch_tickers(symbols), {}, "tickers_batch"
                 ) or {}
             else:
                 return await self._safe_call(
-                    self._ex.fetch_tickers(), {}, "tickers_all"
+                    lambda: self._ex.fetch_tickers(), {}, "tickers_all"
                 ) or {}
         except Exception: return {}
 
@@ -909,14 +909,14 @@ class BitgetConnector:
                            limit: int = 200) -> List:
         if not self._healthy: return []
         return await self._safe_call(
-            self._ex.fetch_ohlcv(symbol, timeframe, limit=limit),
+            lambda: self._ex.fetch_ohlcv(symbol, timeframe, limit=limit),
             [], f"ohlcv:{symbol}"
         ) or []
 
     async def fetch_order_book(self, symbol: str, limit: int = 20) -> Dict:
         if not self._healthy: return {"bids":[],"asks":[]}
         return await self._safe_call(
-            self._ex.fetch_order_book(symbol, limit=limit),
+            lambda: self._ex.fetch_order_book(symbol, limit=limit),
             {"bids":[],"asks":[]}, f"ob:{symbol}"
         ) or {"bids":[],"asks":[]}
 
@@ -924,7 +924,7 @@ class BitgetConnector:
         if not self._healthy: return 0.0
         try:
             data = await self._safe_call(
-                self._ex.fetch_funding_rate(symbol), {}, f"funding:{symbol}"
+                lambda: self._ex.fetch_funding_rate(symbol), {}, f"funding:{symbol}"
             )
             return float(data.get("fundingRate", 0) or 0) if data else 0.0
         except Exception: return 0.0
@@ -933,7 +933,7 @@ class BitgetConnector:
         if not self._healthy: return 0.0
         try:
             data = await self._safe_call(
-                self._ex.fetch_open_interest(symbol), {}, f"oi:{symbol}"
+                lambda: self._ex.fetch_open_interest(symbol), {}, f"oi:{symbol}"
             )
             return float(data.get("openInterest", 0) or 0) if data else 0.0
         except Exception: return 0.0
@@ -942,7 +942,7 @@ class BitgetConnector:
         """Pobierz dostępne saldo USDT."""
         if not self._healthy: return 0.0
         try:
-            bal = await self._safe_call(self._ex.fetch_balance(), {}, "balance")
+            bal = await self._safe_call(lambda: self._ex.fetch_balance(), {}, "balance")
             if not bal: return 0.0
             usdt = bal.get("USDT", {})
             if isinstance(usdt, dict): return float(usdt.get("free", 0) or 0)
@@ -954,7 +954,7 @@ class BitgetConnector:
         if not self._healthy or self.cfg.paper_mode: return True
         try:
             await self._safe_call(
-                self._ex.set_leverage(leverage, symbol,
+                lambda: self._ex.set_leverage(leverage, symbol,
                                        params={"marginMode": margin_mode}),
                 None, f"set_lev:{symbol}"
             )
@@ -972,7 +972,7 @@ class BitgetConnector:
         kw = params or {}
         try:
             return await self._safe_call(
-                self._ex.create_order(symbol, order_type, side,
+                lambda: self._ex.create_order(symbol, order_type, side,
                                        qty, price, kw),
                 None, f"order:{symbol}"
             )
@@ -985,7 +985,7 @@ class BitgetConnector:
         if not self._healthy: return False
         try:
             await self._safe_call(
-                self._ex.cancel_order(order_id, symbol),
+                lambda: self._ex.cancel_order(order_id, symbol),
                 None, f"cancel:{order_id}"
             )
             return True
@@ -996,7 +996,7 @@ class BitgetConnector:
         if not self._healthy: return None
         try:
             positions = await self._safe_call(
-                self._ex.fetch_position(symbol), None, f"pos:{symbol}"
+                lambda: self._ex.fetch_position(symbol), None, f"pos:{symbol}"
             )
             return positions
         except Exception: return None
