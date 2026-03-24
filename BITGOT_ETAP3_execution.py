@@ -75,29 +75,24 @@ from collections import defaultdict, deque, Counter
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
 # ── Importy z poprzednich etapów ──────────────────────────────────────────────
 from bitgot_e1 import (
-    CFG, BITGOTConfig, Action, BotTier, BotStatus, MarketType,
-    PairInfo, BotTrade, BotState, GlobalPortfolio, TradingSignal,
+    CFG, BITGOTConfig, Action, BotTier, BotStatus,
+    PairInfo, BotTrade, BotState, TradingSignal,
     OmegaError, HealAction, HealResult, Severity, ErrorCat,
-    BotGenome, StateVector, MarketSnapshot, MarketDataCache,
-    FeatureBuilder, RegimeOracle, BitgetConnector, PairDiscovery,
+    BotGenome, StateVector, MarketDataCache,
+    FeatureBuilder, RegimeOracle, BitgetConnector,
     CapitalEngine, BITGOTDatabase, GlobalPortfolioManager,
-    MathCore, NumpyMLP, PrioritizedReplayBuffer, AdamOptimizer,
-    detect_manipulation, QuickValidator,
-    TOTAL_BOTS, MIN_CONFIDENCE, TARGET_WIN_RATE, STATE_DIM,
-    N_ACTIONS, MODELS_DIR, DATA_DIR, _TS, _MS, _NOW,
-    FEE_MAKER, FEE_TAKER,
+    TOTAL_BOTS, MIN_CONFIDENCE, DATA_DIR, _TS, _MS, _NOW,
+    FEE_TAKER,
 )
 from bitgot_e2 import (
     BotBrain, SwarmIntelligence, GlobalMetaPool,
-    CouncilVerdict, SignalCouncil, AdversarialShield,
-    RLEngineCluster, NeuralSwarm, MicroSignalEngine,
-    TIER_ENGINE_CLASSES,
+    RLEngineCluster, NeuralSwarm,
 )
 
 _log = logging.getLogger("BITGOT·E3")
