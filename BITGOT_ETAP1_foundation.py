@@ -2018,12 +2018,26 @@ class BITGOTDatabase:
         self._err_q:    List[OmegaError] = []
         self._heal_q:   List[HealAction] = []
         self._metric_q: List[Dict] = []
+        self._log = logging.getLogger("BITGOT·DB")
         self._init_schema()
         self._flush_thread = threading.Thread(target=self._batch_flush_loop, daemon=True)
         self._flush_thread.start()
-        self._log = logging.getLogger("BITGOT·DB")
 
     def _init_schema(self):
+        self._create_bots_table()
+        self._create_trades_table()
+        self._create_signals_table()
+        self._create_omega_errors_table()
+        self._create_heal_actions_table()
+        self._create_heal_knowledge_table()
+        self._create_genomes_table()
+        self._create_metrics_table()
+        self._create_portfolio_history_table()
+        self._create_rewards_table()
+        self._conn.commit()
+        self._log.debug("Schema initialized")
+
+    def _create_bots_table(self):
         self._conn.executescript("""
         -- Boty
         CREATE TABLE IF NOT EXISTS bots (
@@ -2045,7 +2059,10 @@ class BITGOTDatabase:
             demotions    INTEGER DEFAULT 0,
             last_updated TEXT
         );
+        """)
 
+    def _create_trades_table(self):
+        self._conn.executescript("""
         -- Transakcje
         CREATE TABLE IF NOT EXISTS trades (
             id           TEXT PRIMARY KEY,
@@ -2074,7 +2091,10 @@ class BITGOTDatabase:
         CREATE INDEX IF NOT EXISTS idx_trades_bot ON trades(bot_id, entry_ts);
         CREATE INDEX IF NOT EXISTS idx_trades_ts  ON trades(entry_ts);
         CREATE INDEX IF NOT EXISTS idx_trades_sym ON trades(symbol);
+        """)
 
+    def _create_signals_table(self):
+        self._conn.executescript("""
         -- Sygnały
         CREATE TABLE IF NOT EXISTS signals (
             id           TEXT PRIMARY KEY,
@@ -2094,7 +2114,10 @@ class BITGOTDatabase:
         );
         CREATE INDEX IF NOT EXISTS idx_sig_ts  ON signals(created_ts);
         CREATE INDEX IF NOT EXISTS idx_sig_bot ON signals(bot_id);
+        """)
 
+    def _create_omega_errors_table(self):
+        self._conn.executescript("""
         -- Błędy (Omega)
         CREATE TABLE IF NOT EXISTS omega_errors (
             id           TEXT PRIMARY KEY,
@@ -2109,7 +2132,10 @@ class BITGOTDatabase:
             fix_attempts INTEGER DEFAULT 0,
             resolved_by  TEXT
         );
+        """)
 
+    def _create_heal_actions_table(self):
+        self._conn.executescript("""
         -- Akcje naprawcze
         CREATE TABLE IF NOT EXISTS heal_actions (
             id           TEXT PRIMARY KEY,
@@ -2122,7 +2148,10 @@ class BITGOTDatabase:
             details      TEXT,
             xp_earned    INTEGER DEFAULT 0
         );
+        """)
 
+    def _create_heal_knowledge_table(self):
+        self._conn.executescript("""
         -- Wiedza o naprawach (self-learning)
         CREATE TABLE IF NOT EXISTS heal_knowledge (
             id           TEXT PRIMARY KEY,
@@ -2132,7 +2161,10 @@ class BITGOTDatabase:
             n_attempts   INTEGER DEFAULT 0,
             last_used    REAL
         );
+        """)
 
+    def _create_genomes_table(self):
+        self._conn.executescript("""
         -- Genomy
         CREATE TABLE IF NOT EXISTS genomes (
             gid          TEXT PRIMARY KEY,
@@ -2144,7 +2176,10 @@ class BITGOTDatabase:
             genome_json  TEXT,
             ts           REAL
         );
+        """)
 
+    def _create_metrics_table(self):
+        self._conn.executescript("""
         -- Metryki globalne
         CREATE TABLE IF NOT EXISTS metrics (
             ts              INTEGER PRIMARY KEY,
@@ -2165,7 +2200,10 @@ class BITGOTDatabase:
             omega_level     INTEGER,
             avg_confidence  REAL
         );
+        """)
 
+    def _create_portfolio_history_table(self):
+        self._conn.executescript("""
         -- Portfel globalny
         CREATE TABLE IF NOT EXISTS portfolio_history (
             ts           INTEGER PRIMARY KEY,
@@ -2174,7 +2212,10 @@ class BITGOTDatabase:
             drawdown_pct REAL,
             active_pos   INTEGER
         );
+        """)
 
+    def _create_rewards_table(self):
+        self._conn.executescript("""
         -- XP / Rewards
         CREATE TABLE IF NOT EXISTS rewards (
             id           TEXT PRIMARY KEY,
@@ -2186,8 +2227,6 @@ class BITGOTDatabase:
             details      TEXT
         );
         """)
-        self._conn.commit()
-        self._log.debug("Schema initialized")
 
     def _batch_flush_loop(self):
         while True:
