@@ -124,6 +124,7 @@ class DataFetcher:
     TICKER_BATCH_SIZE   = 500    # Bitget max per call
     OHLCV_BATCH_SIZE    = 50     # symboli per 1 OHLCV round
     OB_ACTIVE_ONLY      = 200    # order book tylko top N symboli
+    FUNDING_BATCH_SIZE  = 50     # symbols per funding/OI round
     FUNDING_INTERVAL_S  = 60.0
     OHLCV_INTERVAL_S    = 120.0
     TICKER_INTERVAL_S   = 0.5    # 2Hz ticker refresh
@@ -244,17 +245,32 @@ class DataFetcher:
             await asyncio.sleep(self.OB_INTERVAL_S)
 
     async def _funding_loop(self):
-        """Funding + OI co 60s dla wszystkich."""
+        """Funding + OI co 60s dla wszystkich (optimized with asyncio.gather)."""
         await asyncio.sleep(5)
         while self._running:
-            for sym in self.symbols:
-                try:
-                    funding = await self.conn.fetch_funding_rate(sym)
-                    oi      = await self.conn.fetch_open_interest(sym)
-                    self.mdc.update_funding(sym, funding, oi)
-                    await asyncio.sleep(0.02)
-                except Exception:
-                    pass
+            for i in range(0, len(self.symbols), self.FUNDING_BATCH_SIZE):
+                batch = self.symbols[i:i + self.FUNDING_BATCH_SIZE]
+                tasks = []
+                for sym in batch:
+                    async def _fetch_and_update(s):
+                        try:
+                            # Fetch funding and OI concurrently for a single symbol
+                            funding, oi = await asyncio.gather(
+                                self.conn.fetch_funding_rate(s),
+                                self.conn.fetch_open_interest(s)
+                            )
+                            self.mdc.update_funding(s, funding, oi)
+                        except Exception:
+                            pass
+                    tasks.append(_fetch_and_update(sym))
+
+                # Execute batch concurrently
+                if tasks:
+                    await asyncio.gather(*tasks)
+
+                # Gentle throttle between batches to respect rate limits
+                await asyncio.sleep(0.1)
+
             await asyncio.sleep(self.FUNDING_INTERVAL_S)
 
     def stop(self): self._running = False
