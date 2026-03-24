@@ -921,10 +921,12 @@ class BotExecutor:
         pos.status = "closing"
         # Cancel pending TP/SL orders
         if not CFG.paper_mode:
+            tasks = []
             for oid in [pos.tp_order_id, pos.sl_order_id]:
                 if oid:
-                    with suppress(Exception):
-                        await self.conn.cancel_order(oid, pos.symbol)
+                    tasks.append(self.conn.cancel_order(oid, pos.symbol))
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
             # Market close
             close_side = "sell" if pos.side == "long" else "buy"
             ord_close = await self.conn.create_order(
