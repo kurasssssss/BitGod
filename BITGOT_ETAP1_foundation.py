@@ -1532,8 +1532,8 @@ class MathCore:
         ten = midline(t); kij = midline(k)
         sa  = (ten + kij) / 2
         sb  = midline(s)
-        sa_disp = np.concatenate([np.full(k, np.nan), sa[:-k]])
-        sb_disp = np.concatenate([np.full(k, np.nan), sb[:-k]])
+        sa_disp = np.concatenate([np.full(k, np.nan), sa[:-k]])[:len(high)]
+        sb_disp = np.concatenate([np.full(k, np.nan), sb[:-k]])[:len(high)]
         return {"tenkan": ten, "kijun": kij, "senkou_a": sa_disp, "senkou_b": sb_disp}
 
     # ── Hurst Exponent ────────────────────────────────────────────────────────────
