@@ -61,6 +61,7 @@ import time
 import threading
 import traceback
 import uuid
+import secrets
 from collections import deque
 from contextlib import suppress
 from dataclasses import asdict
@@ -386,12 +387,23 @@ class LiveDashboard:
 def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
     """Buduje FastAPI aplikację."""
     try:
-        from fastapi import FastAPI, HTTPException, BackgroundTasks
+        from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Security
+        from fastapi.security import APIKeyHeader
         from fastapi.responses import JSONResponse
         from fastapi.middleware.cors import CORSMiddleware
     except ImportError:
         _log.warning("FastAPI not installed — API disabled")
         return None
+
+    api_key_header_scheme = APIKeyHeader(name="X-API-Key", auto_error=True)
+
+    def get_api_key(api_key: str = Security(api_key_header_scheme)):
+        if secrets.compare_digest(api_key, CFG.api_token):
+            return api_key
+        raise HTTPException(
+            status_code=403,
+            detail="Could not validate credentials"
+        )
 
     app = FastAPI(
         title="BITGOT API",
@@ -400,15 +412,17 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+        allow_origins=CFG.allowed_origins, allow_methods=["*"], allow_headers=["*"],
     )
+
+    _log.info(f"🔑 API Token: {CFG.api_token}")
 
     @app.get("/health")
     async def health():
         """Health check — Replit uptime monitor."""
         return {"status": "ok", "ts": _NOW(), "uptime_s": round(_TS() - orchestrator._start_ts, 1)}
 
-    @app.get("/status")
+    @app.get("/status", dependencies=[Depends(get_api_key)])
     async def status():
         """Full system snapshot."""
         e3 = orchestrator.e3
@@ -426,7 +440,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             "genome_evo":e3.genome_evo.stats() if e3 and e3.genome_evo else {},
         })
 
-    @app.get("/bots")
+    @app.get("/bots", dependencies=[Depends(get_api_key)])
     async def bots(tier: str = "", limit: int = 100, offset: int = 0):
         """Lista botów ze statystykami."""
         e3 = orchestrator.e3
@@ -442,7 +456,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             "bots": [s.stats() for s in page],
         }
 
-    @app.get("/positions")
+    @app.get("/positions", dependencies=[Depends(get_api_key)])
     async def positions():
         """Aktywne otwarte pozycje."""
         e3 = orchestrator.e3
@@ -466,7 +480,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
         pos_list.sort(key=lambda p: abs(p["upnl"]), reverse=True)
         return {"count": len(pos_list), "positions": pos_list}
 
-    @app.get("/signals")
+    @app.get("/signals", dependencies=[Depends(get_api_key)])
     async def signals_endpoint(limit: int = 100):
         """Ostatnie sygnały."""
         e3 = orchestrator.e3
@@ -489,7 +503,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             ]
         }
 
-    @app.get("/performance")
+    @app.get("/performance", dependencies=[Depends(get_api_key)])
     async def performance():
         """Equity curve, drawdown, Sharpe."""
         gp = orchestrator.portfolio.snapshot
@@ -513,7 +527,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             "tier_dist":      orchestrator.e3.tier_mgr.stats() if orchestrator.e3 and orchestrator.e3.tier_mgr else {},
         }
 
-    @app.get("/genome/{bot_id}")
+    @app.get("/genome/{bot_id}", dependencies=[Depends(get_api_key)])
     async def genome(bot_id: int):
         """Genome konkretnego bota."""
         e3 = orchestrator.e3
@@ -528,7 +542,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             "genome": g.to_dict(),
         }
 
-    @app.post("/halt")
+    @app.post("/halt", dependencies=[Depends(get_api_key)])
     async def halt(reason: str = "manual"):
         """Emergency halt."""
         e3 = orchestrator.e3
@@ -537,7 +551,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
         _log.critical(f"🚨 MANUAL HALT: {reason}")
         return {"halted": True, "reason": reason, "ts": _NOW()}
 
-    @app.post("/resume")
+    @app.post("/resume", dependencies=[Depends(get_api_key)])
     async def resume():
         """Wznów po halcie."""
         e3 = orchestrator.e3
@@ -547,12 +561,12 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
         _log.info("✅ System resumed manually")
         return {"resumed": True, "ts": _NOW()}
 
-    @app.get("/swarm")
+    @app.get("/swarm", dependencies=[Depends(get_api_key)])
     async def swarm_stats():
         """Swarm intelligence stats."""
         return orchestrator.swarm.global_stats()
 
-    @app.get("/healer")
+    @app.get("/healer", dependencies=[Depends(get_api_key)])
     async def healer_stats():
         """Omega Healer stats."""
         e3 = orchestrator.e3

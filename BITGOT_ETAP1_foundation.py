@@ -280,6 +280,13 @@ class BITGOTConfig:
     # ── REST API ──────────────────────────────────────────────────────────────────
     api_port:             int   = 8888
     ws_port:              int   = 8889
+    api_token:            str   = field(default_factory=lambda: os.getenv("BITGOT_API_TOKEN", uuid.uuid4().hex))
+    allowed_origins:      List[str] = field(default_factory=lambda: [
+        "http://localhost",
+        "http://localhost:8888",
+        "http://127.0.0.1",
+        "http://127.0.0.1:8888"
+    ])
 
     def leverage_for_wr(self, win_rate: float) -> int:
         """Dynamiczna dźwignia bazująca na aktualnym WR bota."""
