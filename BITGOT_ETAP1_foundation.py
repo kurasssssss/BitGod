@@ -2018,6 +2018,8 @@ class BITGOTDatabase:
         self._err_q:    List[OmegaError] = []
         self._heal_q:   List[HealAction] = []
         self._metric_q: List[Dict] = []
+        self._genome_q: List[BotGenome] = []
+        self._log = logging.getLogger("BITGOT·DB")
         self._init_schema()
         self._flush_thread = threading.Thread(target=self._batch_flush_loop, daemon=True)
         self._flush_thread.start()
@@ -2196,6 +2198,9 @@ class BITGOTDatabase:
             except Exception as e:
                 if hasattr(self, '_log'): self._log.debug(f"Flush: {e}")
 
+    def flush(self):
+        self._flush()
+
     def _flush(self):
         with self._lock:
             bots   = self._bot_q[:];   self._bot_q.clear()
@@ -2204,6 +2209,7 @@ class BITGOTDatabase:
             errs   = self._err_q[:];   self._err_q.clear()
             heals  = self._heal_q[:];  self._heal_q.clear()
             mets   = self._metric_q[:];self._metric_q.clear()
+            genomes= self._genome_q[:];self._genome_q.clear()
 
         if bots:
             self._conn.executemany(
@@ -2257,7 +2263,13 @@ class BITGOTDatabase:
                   m.get("heals_1min",0), m.get("omega_level",1),
                   m.get("avg_confidence",0.0)) for m in mets]
             )
-        if any([bots, trades, sigs, errs, heals, mets]):
+        if genomes:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO genomes VALUES (?,?,?,?,?,?,?,?)",
+                [(g.gid, g.bot_id, g.generation, g.fitness(), g.wr(),
+                  g.n_trades, json.dumps(g.to_dict()), _TS()) for g in genomes]
+            )
+        if any([bots, trades, sigs, errs, heals, mets, genomes]):
             self._conn.commit()
 
     # ── Queue methods ──────────────────────────────────────────────────────────
@@ -2277,12 +2289,7 @@ class BITGOTDatabase:
     # ── Direct writes ──────────────────────────────────────────────────────────
     def save_genome(self, g: BotGenome):
         with self._lock:
-            self._conn.execute(
-                "INSERT OR REPLACE INTO genomes VALUES (?,?,?,?,?,?,?,?)",
-                (g.gid, g.bot_id, g.generation, g.fitness(), g.wr(),
-                 g.n_trades, json.dumps(g.to_dict()), _TS())
-            )
-            self._conn.commit()
+            self._genome_q.append(g)
 
     def log_reward(self, event: str, xp: int, total: int, level: int, details: str = ""):
         with self._lock:
