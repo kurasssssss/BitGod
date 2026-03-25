@@ -85,7 +85,7 @@ from bitgot_e1 import (
     PairInfo, BotTrade, BotState, GlobalPortfolio, TradingSignal,
     OmegaError, HealAction, HealResult, Severity, ErrorCat,
     BotGenome, StateVector, MarketSnapshot, MarketDataCache,
-    FeatureBuilder, RegimeOracle, BitgetConnector, PairDiscovery,
+    FeatureBuilder, RegimeOracle, BitgetConnector,
     CapitalEngine, BITGOTDatabase, GlobalPortfolioManager,
     MathCore, NumpyMLP, PrioritizedReplayBuffer, AdamOptimizer,
     detect_manipulation, QuickValidator,
