@@ -3077,50 +3077,43 @@ class CompositeSignalBuilder:
         self.distill = distill
         self.meta    = meta_hub
 
-    def build(self, sv: StateVector, regime: Regime, regime_conf: float,
-               pair: PairInfo) -> CompositeSignal:
-        """
-        Build composite signal from all intelligence layers.
-        Returns CompositeSignal with full breakdown.
-        """
-        result = CompositeSignal(regime=regime.value, regime_conf=regime_conf)
-
-        # ── 1. Quick pre-validation ───────────────────────────────────────────
+    def _validate_safety(self, result: CompositeSignal, sv: StateVector, regime: Regime, regime_conf: float) -> bool:
+        """Pre-validation and adversarial shield checks."""
         valid, reason = QuickValidator.validate(sv, self.genome, regime, regime_conf)
         if not valid:
-            result.shield_ok = False; result.shield_reason = reason
-            return result
+            result.shield_ok = False
+            result.shield_reason = reason
+            return False
 
-        # ── 2. Adversarial Shield check ───────────────────────────────────────
         safe, shield_reason = self.shield.check(sv, self.swarm)
         if not safe:
-            result.shield_ok = False; result.shield_reason = shield_reason
+            result.shield_ok = False
+            result.shield_reason = shield_reason
             result.manipulation_risk = sv.manipulation_risk()
-            return result
+            return False
+
         result.shield_ok = True
+        return True
 
-        g = self.genome
-        tier = pair.tier
-
-        # ── 3. RL Cluster vote ────────────────────────────────────────────────
+    def _collect_signals(self, result: CompositeSignal, sv: StateVector, pair: PairInfo, regime: Regime) -> dict:
+        """Querying RL, Neural, Micro, MAML, and Distillation layers."""
+        # RL Cluster
         rl_result = self.rl.vote(sv)
-        rl_score = rl_result["buy_pct"] - rl_result["sell_pct"]  # ∈ [-1, +1]
-        rl_conf  = float(rl_result["confidence"])
+        rl_score = rl_result["buy_pct"] - rl_result["sell_pct"]
         result.rl_vote = rl_result
         result.engines_voted = rl_result["n_engines"]
         result.n_agree = rl_result["n_buy"] if rl_score > 0 else rl_result["n_sell"]
 
-        # ── 4. Neural Swarm ───────────────────────────────────────────────────
+        # Neural Swarm
         neural_result = self.neural.predict(sv)
-        neural_score  = neural_result["score"] / 2.0  # normalize ∈ [-1, +1]
-        neural_conf   = float(neural_result["confidence"])
+        neural_score = neural_result["score"] / 2.0
         result.neural_vote = neural_result
 
-        # ── 5. Micro Signal ───────────────────────────────────────────────────
+        # Micro Signal
         micro_s = self.micro.signal
         result.micro_signal = micro_s
 
-        # ── 6. MAML adapted signal ────────────────────────────────────────────
+        # MAML Adapted Signal
         try:
             maml_act, maml_conf = self.meta.get_adapted_signal(
                 self.genome.bot_id, pair.symbol, regime.value, sv
@@ -3131,49 +3124,69 @@ class CompositeSignalBuilder:
             maml_s = 0.0
         result.maml_signal = maml_s
 
-        # ── 7. Distillation signal ────────────────────────────────────────────
+        # Distillation Signal
         raw_distill = self.swarm.get_distillation(regime=regime.value)
-        kd_distill  = self.distill.get_distillation(tier, pair.symbol, regime.value)
-        distill_s   = (raw_distill + kd_distill) / 2.0
+        kd_distill = self.distill.get_distillation(pair.tier, pair.symbol, regime.value)
+        distill_s = (raw_distill + kd_distill) / 2.0
         result.distill_signal = distill_s
 
-        # ── 8. Composite raw score ────────────────────────────────────────────
-        # Weight-blended (genome-controlled)
-        raw = (rl_score     * g.w_rl    +
-                neural_score * g.w_neural +
-                micro_s      * g.w_micro  +
-                maml_s       * 0.05        +  # maml small contribution
-                distill_s    * g.w_regime)
+        return {
+            "rl_score": rl_score,
+            "rl_conf": float(rl_result["confidence"]),
+            "neural_score": neural_score,
+            "neural_conf": float(neural_result["confidence"]),
+            "micro_s": micro_s,
+            "maml_s": maml_s,
+            "distill_s": distill_s
+        }
+
+    def _calculate_raw_score(self, result: CompositeSignal, signals: dict) -> float:
+        """Aggregating raw signals into a blended score."""
+        g = self.genome
+        raw = (signals["rl_score"]     * g.w_rl    +
+               signals["neural_score"] * g.w_neural +
+               signals["micro_s"]      * g.w_micro  +
+               signals["maml_s"]       * 0.05       +
+               signals["distill_s"]    * g.w_regime)
 
         raw = float(np.clip(raw, -1.0, 1.0))
         result.raw_score = raw
+        return raw
 
-        # ── 9. Confidence aggregation ─────────────────────────────────────────
-        # Agreement factor: how many components agree?
-        components = [rl_score, neural_score, micro_s, distill_s]
+    def _calculate_confidence(self, result: CompositeSignal, signals: dict, regime: Regime, regime_conf: float) -> float:
+        """Computing weighted confidence."""
+        components = [signals["rl_score"], signals["neural_score"], signals["micro_s"], signals["distill_s"]]
         pos_count = sum(1 for c in components if c > 0.05)
         neg_count = sum(1 for c in components if c < -0.05)
         agree_factor = abs(pos_count - neg_count) / max(pos_count + neg_count, 1)
-        # Weighted confidence
-        conf = (rl_conf * g.w_rl + neural_conf * g.w_neural +
-                 float(abs(micro_s)) * g.w_micro) * agree_factor
-        conf = float(np.clip(conf, 0.0, 1.0))
-        # Regime confidence adjustment
-        if RegimeOracle().is_dangerous(regime): conf *= 0.65
-        if regime_conf < 0.40: conf *= 0.80
-        result.confidence = conf
 
-        # ── 10. Direction determination ───────────────────────────────────────
+        g = self.genome
+        conf = (signals["rl_conf"] * g.w_rl +
+                signals["neural_conf"] * g.w_neural +
+                float(abs(signals["micro_s"])) * g.w_micro) * agree_factor
+        conf = float(np.clip(conf, 0.0, 1.0))
+
+        if RegimeOracle().is_dangerous(regime):
+            conf *= 0.65
+        if regime_conf < 0.40:
+            conf *= 0.80
+
+        result.confidence = conf
+        return conf
+
+    def _determine_direction_and_strength(self, result: CompositeSignal, raw: float, conf: float) -> bool:
+        """Threshold checks for final output (buy/sell/hold). Returns False if signal does not cross threshold."""
+        g = self.genome
         effective_thr = max(g.signal_threshold, self.swarm.get_threshold(g.bot_id) * 0.5)
+
         if raw > effective_thr and conf >= g.confidence_min:
             result.direction = "buy"
         elif raw < -effective_thr and conf >= g.confidence_min:
             result.direction = "sell"
         else:
             result.direction = "hold"
-            return result  # No signal above threshold
+            return False
 
-        # ── 11. Strength classification ───────────────────────────────────────
         if conf >= CFG.confidence_absolute:
             result.strength = "absolute"
         elif conf >= CFG.confidence_strong:
@@ -3181,13 +3194,31 @@ class CompositeSignalBuilder:
         elif conf >= CFG.confidence_threshold:
             result.strength = "normal"
         else:
-            result.direction = "hold"  # Below 80% → no trade
-            return result
+            result.direction = "hold"
+            return False
 
-        # ── 12. Final 80% gate (non-negotiable) ──────────────────────────────
         if result.confidence < MIN_CONFIDENCE:
             result.direction = "hold"
             result.strength  = "below_threshold"
+
+        return True
+
+    def build(self, sv: StateVector, regime: Regime, regime_conf: float,
+               pair: PairInfo) -> CompositeSignal:
+        """
+        Build composite signal from all intelligence layers.
+        Returns CompositeSignal with full breakdown.
+        """
+        result = CompositeSignal(regime=regime.value, regime_conf=regime_conf)
+
+        if not self._validate_safety(result, sv, regime, regime_conf):
+            return result
+
+        signals = self._collect_signals(result, sv, pair, regime)
+        raw = self._calculate_raw_score(result, signals)
+        conf = self._calculate_confidence(result, signals, regime, regime_conf)
+
+        self._determine_direction_and_strength(result, raw, conf)
 
         return result
 
