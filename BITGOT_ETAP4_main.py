@@ -383,25 +383,9 @@ class LiveDashboard:
 # REST API — FastAPI server port 8888
 # ══════════════════════════════════════════════════════════════════════════════════════════
 
-def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
-    """Buduje FastAPI aplikację."""
-    try:
-        from fastapi import FastAPI, HTTPException, BackgroundTasks
-        from fastapi.responses import JSONResponse
-        from fastapi.middleware.cors import CORSMiddleware
-    except ImportError:
-        _log.warning("FastAPI not installed — API disabled")
-        return None
 
-    app = FastAPI(
-        title="BITGOT API",
-        description="3000 Bot Bitget Trading System",
-        version="∞.0",
-    )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-    )
+def _register_system_routes(app: "FastAPI", orchestrator: "BITGOTOrchestrator", metrics: "MetricsEngine"):
+    from fastapi.responses import JSONResponse
 
     @app.get("/health")
     async def health():
@@ -426,6 +410,27 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             "genome_evo":e3.genome_evo.stats() if e3 and e3.genome_evo else {},
         })
 
+    @app.post("/halt")
+    async def halt(reason: str = "manual"):
+        """Emergency halt."""
+        e3 = orchestrator.e3
+        if e3 and e3.circuit:
+            e3.circuit._l4_halted = True
+        _log.critical(f"🚨 MANUAL HALT: {reason}")
+        return {"halted": True, "reason": reason, "ts": _NOW()}
+
+    @app.post("/resume")
+    async def resume():
+        """Wznów po halcie."""
+        e3 = orchestrator.e3
+        if e3 and e3.circuit:
+            e3.circuit.resume_l4()
+            e3.circuit.reset_daily()
+        _log.info("✅ System resumed manually")
+        return {"resumed": True, "ts": _NOW()}
+
+
+def _register_trading_routes(app: "FastAPI", orchestrator: "BITGOTOrchestrator"):
     @app.get("/bots")
     async def bots(tier: str = "", limit: int = 100, offset: int = 0):
         """Lista botów ze statystykami."""
@@ -489,6 +494,10 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             ]
         }
 
+
+def _register_ai_and_perf_routes(app: "FastAPI", orchestrator: "BITGOTOrchestrator", metrics: "MetricsEngine"):
+    from fastapi import HTTPException
+
     @app.get("/performance")
     async def performance():
         """Equity curve, drawdown, Sharpe."""
@@ -528,25 +537,6 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
             "genome": g.to_dict(),
         }
 
-    @app.post("/halt")
-    async def halt(reason: str = "manual"):
-        """Emergency halt."""
-        e3 = orchestrator.e3
-        if e3 and e3.circuit:
-            e3.circuit._l4_halted = True
-        _log.critical(f"🚨 MANUAL HALT: {reason}")
-        return {"halted": True, "reason": reason, "ts": _NOW()}
-
-    @app.post("/resume")
-    async def resume():
-        """Wznów po halcie."""
-        e3 = orchestrator.e3
-        if e3 and e3.circuit:
-            e3.circuit.resume_l4()
-            e3.circuit.reset_daily()
-        _log.info("✅ System resumed manually")
-        return {"resumed": True, "ts": _NOW()}
-
     @app.get("/swarm")
     async def swarm_stats():
         """Swarm intelligence stats."""
@@ -558,6 +548,32 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
         e3 = orchestrator.e3
         if not e3 or not e3.healer: return {}
         return e3.healer.stats()
+
+
+def build_api(orchestrator: "BITGOTOrchestrator", metrics: "MetricsEngine"):
+    """Buduje FastAPI aplikację."""
+    try:
+        from fastapi import FastAPI
+        from fastapi.middleware.cors import CORSMiddleware
+    except ImportError:
+        _log.warning("FastAPI not installed — API disabled")
+        return None
+
+    app = FastAPI(
+        title="BITGOT API",
+        description="3000 Bot Bitget Trading System",
+        version="∞.0",
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CFG.allowed_origins if hasattr(CFG, 'allowed_origins') else ["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    _register_system_routes(app, orchestrator, metrics)
+    _register_trading_routes(app, orchestrator)
+    _register_ai_and_perf_routes(app, orchestrator, metrics)
 
     return app
 
