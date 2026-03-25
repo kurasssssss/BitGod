@@ -84,7 +84,7 @@ from bitgot_e1 import (
     CFG, BITGOTConfig, Action, BotTier, BotStatus, MarketType,
     PairInfo, BotTrade, BotState, GlobalPortfolio, TradingSignal,
     OmegaError, HealAction, HealResult, Severity, ErrorCat,
-    BotGenome, StateVector, MarketSnapshot, MarketDataCache,
+    BotGenome, StateVector, MarketDataCache,
     FeatureBuilder, RegimeOracle, BitgetConnector, PairDiscovery,
     CapitalEngine, BITGOTDatabase, GlobalPortfolioManager,
     MathCore, NumpyMLP, PrioritizedReplayBuffer, AdamOptimizer,
