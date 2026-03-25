@@ -64,7 +64,6 @@ import math
 import os
 import random
 import re
-import sqlite3
 import subprocess
 import sys
 import threading
