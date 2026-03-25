@@ -771,95 +771,97 @@ class BotExecutor:
         finally:
             self._busy = False
 
-    async def _open_position(self, sig: TradingSignal) -> Optional[BotTrade]:
-        """Otwórz pozycję z smart limit→market fallback."""
-        sym   = sig.symbol
-        side  = "buy" if sig.side == "long" else "sell"
-        price = sig.entry_price
+    async def _place_entry_order(self, sym: str, side: str, qty: float, price: float, sig_side: str) -> Optional[Tuple[str, float]]:
+        """Attempts to place limit then market order, returning order_id and entry_price. Checks slippage."""
+        entry_price = price
+        order_id = ""
 
-        # Set leverage
-        await self.conn.set_leverage(sym, sig.leverage)
-
-        # Calculate qty
-        qty = sig.notional / max(price, 1e-12)
-        qty = round(qty, 4)
-        if qty <= 0:
-            return None
+        if CFG.paper_mode:
+            return f"paper_{uuid.uuid4().hex[:8]}", entry_price
 
         # ── Attempt 1: Limit order (maker fee) ────────────────────────────────
-        entry_price = price; order_id = ""
-        if not CFG.paper_mode:
-            limit_px = price * (1 - 0.0001) if sig.side == "long" else price * (1 + 0.0001)
-            order = await self.conn.create_order(
-                sym, "limit", side, qty, limit_px,
-                {"marginMode": "cross", "postOnly": True}
-            )
-            if order:
-                order_id = str(order.get("id", ""))
-                # Wait for fill
-                deadline = _TS() + self.LIMIT_TIMEOUT_S
-                filled   = False
-                while _TS() < deadline:
-                    await asyncio.sleep(0.15)
-                    try:
-                        if self.conn._ex:
-                            o = await self.conn._ex.fetch_order(order_id, sym)
-                            if o.get("status") in ("closed", "filled"):
-                                entry_price = float(o.get("average", price))
-                                filled = True; break
-                    except Exception:
-                        pass
-                if not filled:
-                    # Cancel limit → try market
-                    await self.conn.cancel_order(order_id, sym)
-                    order_id = ""
-
-            # ── Attempt 2: Market order ────────────────────────────────────────
-            if not order_id:
-                for _ in range(self.MARKET_RETRIES):
-                    mkt = await self.conn.create_order(sym, "market", side, qty,
-                                                        params={"marginMode": "cross"})
-                    if mkt:
-                        order_id    = str(mkt.get("id", f"mkt_{uuid.uuid4().hex[:8]}"))
-                        entry_price = float(mkt.get("average", mkt.get("price", price)))
-                        break
-                    await asyncio.sleep(0.5)
-
-            # Slippage check
-            slip = abs(entry_price - price) / max(price, 1e-12)
-            if slip > self.SLIPPAGE_MAX_PCT:
-                self._log.warning(f"Slippage {slip:.4%} > {self.SLIPPAGE_MAX_PCT:.4%} — aborting {sym}")
-                # Try to close if opened
-                await self.conn.close_position(sym, sig.side, qty)
-                return None
-        else:
-            order_id = f"paper_{uuid.uuid4().hex[:8]}"
-
-        # ── Recalculate SL/TP with actual entry ────────────────────────────────
-        sl_price, tp_price = CFG.position_size_usd and self._calc_sl_tp(
-            entry_price, sig.side, sig.leverage
+        limit_px = price * (1 - 0.0001) if sig_side == "long" else price * (1 + 0.0001)
+        order = await self.conn.create_order(
+            sym, "limit", side, qty, limit_px,
+            {"marginMode": "cross", "postOnly": True}
         )
+        if order:
+            order_id = str(order.get("id", ""))
+            # Wait for fill
+            deadline = _TS() + self.LIMIT_TIMEOUT_S
+            filled   = False
+            while _TS() < deadline:
+                await asyncio.sleep(0.15)
+                try:
+                    if self.conn._ex:
+                        o = await self.conn._ex.fetch_order(order_id, sym)
+                        if o.get("status") in ("closed", "filled"):
+                            entry_price = float(o.get("average", price))
+                            filled = True; break
+                except Exception:
+                    pass
+            if not filled:
+                # Cancel limit → try market
+                await self.conn.cancel_order(order_id, sym)
+                order_id = ""
+
+        # ── Attempt 2: Market order ────────────────────────────────────────
+        if not order_id:
+            for _ in range(self.MARKET_RETRIES):
+                mkt = await self.conn.create_order(sym, "market", side, qty,
+                                                    params={"marginMode": "cross"})
+                if mkt:
+                    order_id    = str(mkt.get("id", f"mkt_{uuid.uuid4().hex[:8]}"))
+                    entry_price = float(mkt.get("average", mkt.get("price", price)))
+                    break
+                await asyncio.sleep(0.5)
+
+        # Slippage check
+        slip = abs(entry_price - price) / max(price, 1e-12)
+        if slip > self.SLIPPAGE_MAX_PCT:
+            self._log.warning(f"Slippage {slip:.4%} > {self.SLIPPAGE_MAX_PCT:.4%} — aborting {sym}")
+            # Try to close if opened
+            await self.conn.close_position(sym, sig_side, qty)
+            return None
+
+        return order_id, entry_price
+
+    async def _place_sl_tp_orders(self, sym: str, qty: float, sl_price: float, tp_price: float, sig_side: str) -> Tuple[str, str]:
+        """Places SL and TP orders. Returns tp_order_id, sl_order_id."""
+        tp_order_id = ""
+        sl_order_id = ""
+
+        if CFG.paper_mode:
+            return tp_order_id, sl_order_id
+
+        close_side = "sell" if sig_side == "long" else "buy"
 
         # ── Place TP (limit) ───────────────────────────────────────────────────
-        tp_order_id = ""; sl_order_id = ""
-        close_side = "sell" if sig.side == "long" else "buy"
-        if not CFG.paper_mode:
-            tp_ord = await self.conn.create_order(
-                sym, "limit", close_side, qty, tp_price,
-                {"marginMode": "cross", "reduceOnly": True}
-            )
-            if tp_ord: tp_order_id = str(tp_ord.get("id", ""))
+        tp_ord = await self.conn.create_order(
+            sym, "limit", close_side, qty, tp_price,
+            {"marginMode": "cross", "reduceOnly": True}
+        )
+        if tp_ord:
+            tp_order_id = str(tp_ord.get("id", ""))
 
-            # ── Place SL (stop-market) ─────────────────────────────────────────
-            sl_ord = await self.conn.create_order(
-                sym, "stop_market", close_side, qty,
-                params={"stopPrice": sl_price, "triggerType": "mark_price",
-                        "reduceOnly": True, "marginMode": "cross"}
-            )
-            if sl_ord: sl_order_id = str(sl_ord.get("id", ""))
+        # ── Place SL (stop-market) ─────────────────────────────────────────
+        sl_ord = await self.conn.create_order(
+            sym, "stop_market", close_side, qty,
+            params={"stopPrice": sl_price, "triggerType": "mark_price",
+                    "reduceOnly": True, "marginMode": "cross"}
+        )
+        if sl_ord:
+            sl_order_id = str(sl_ord.get("id", ""))
 
-        # ── Create LivePosition ────────────────────────────────────────────────
+        return tp_order_id, sl_order_id
+
+    def _create_position_and_trade(self, sig: TradingSignal, qty: float, entry_price: float,
+                                   sl_price: float, tp_price: float,
+                                   order_id: str, tp_order_id: str, sl_order_id: str) -> BotTrade:
+        """Creates LivePosition and BotTrade, saves them, and returns the trade."""
+        sym = sig.symbol
         fees = qty * entry_price * FEE_TAKER
+
         pos  = LivePosition(
             bot_id      = sig.bot_id,
             symbol      = sym,
@@ -904,6 +906,42 @@ class BotExecutor:
         )
         self.db.q_trade(trade)
         return trade
+
+    async def _open_position(self, sig: TradingSignal) -> Optional[BotTrade]:
+        """Otwórz pozycję z smart limit→market fallback."""
+        sym   = sig.symbol
+        side  = "buy" if sig.side == "long" else "sell"
+        price = sig.entry_price
+
+        # Set leverage
+        await self.conn.set_leverage(sym, sig.leverage)
+
+        # Calculate qty
+        qty = sig.notional / max(price, 1e-12)
+        qty = round(qty, 4)
+        if qty <= 0:
+            return None
+
+        # Place Entry Order
+        order_res = await self._place_entry_order(sym, side, qty, price, sig.side)
+        if not order_res:
+            return None
+        order_id, entry_price = order_res
+
+        # Recalculate SL/TP with actual entry
+        sl_price, tp_price = CFG.position_size_usd and self._calc_sl_tp(
+            entry_price, sig.side, sig.leverage
+        )
+
+        # Place SL/TP Orders
+        tp_order_id, sl_order_id = await self._place_sl_tp_orders(
+            sym, qty, sl_price, tp_price, sig.side
+        )
+
+        # Create tracking objects
+        return self._create_position_and_trade(
+            sig, qty, entry_price, sl_price, tp_price, order_id, tp_order_id, sl_order_id
+        )
 
     def _calc_sl_tp(self, entry: float, side: str, lev: int) -> Tuple[float, float]:
         """SL/TP динамически от leverage."""
