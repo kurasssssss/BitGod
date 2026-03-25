@@ -88,7 +88,7 @@ from bitgot_e1 import (
     FeatureBuilder, RegimeOracle, BitgetConnector, PairDiscovery,
     CapitalEngine, BITGOTDatabase, GlobalPortfolioManager,
     MathCore, NumpyMLP, PrioritizedReplayBuffer, AdamOptimizer,
-    detect_manipulation, QuickValidator,
+    detect_manipulation,
     TOTAL_BOTS, MIN_CONFIDENCE, TARGET_WIN_RATE, STATE_DIM,
     N_ACTIONS, MODELS_DIR, DATA_DIR, _TS, _MS, _NOW,
     FEE_MAKER, FEE_TAKER,
