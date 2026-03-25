@@ -87,7 +87,7 @@ from bitgot_e1 import (
     BotGenome, StateVector, MarketSnapshot, MarketDataCache,
     FeatureBuilder, RegimeOracle, BitgetConnector, PairDiscovery,
     CapitalEngine, BITGOTDatabase, GlobalPortfolioManager,
-    MathCore, NumpyMLP, PrioritizedReplayBuffer, AdamOptimizer,
+    MathCore, NumpyMLP, PrioritizedReplayBuffer,
     detect_manipulation, QuickValidator,
     TOTAL_BOTS, MIN_CONFIDENCE, TARGET_WIN_RATE, STATE_DIM,
     N_ACTIONS, MODELS_DIR, DATA_DIR, _TS, _MS, _NOW,
