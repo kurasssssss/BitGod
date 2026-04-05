@@ -71,7 +71,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 # ── Importy z poprzednich etapów ──────────────────────────────────────────────
-from bitgot_e1 import (
+from BITGOT_ETAP1_foundation import (
     CFG, BITGOTConfig, BotTier, BotState, BotGenome,
     BitgetConnector, PairDiscovery, PairInfo, CapitalEngine,
     BITGOTDatabase, GlobalPortfolioManager, MarketDataCache,
@@ -79,10 +79,10 @@ from bitgot_e1 import (
     TOTAL_BOTS, MIN_CONFIDENCE, DATA_DIR, MODELS_DIR,
     _TS, _MS, _NOW,
 )
-from bitgot_e2 import (
+from intelligence import (
     BotBrain, SwarmIntelligence, GlobalMetaPool,
 )
-from bitgot_e3 import (
+from BITGOT_ETAP3_execution import (
     BitgotSystemE3, BotScout, DataFetcher,
     CircuitBreakers, OmegaHealerDaemon, TierManager,
     GenomeEvolution, SignalManager,
