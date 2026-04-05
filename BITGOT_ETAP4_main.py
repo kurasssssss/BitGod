@@ -403,6 +403,86 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
         allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
     )
 
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    async def get_dashboard():
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>BITGOD Dashboard</title>
+            <style>
+                body { font-family: 'Courier New', Courier, monospace; background-color: #121212; color: #00ff00; margin: 0; padding: 20px; }
+                h1 { color: #00ff00; border-bottom: 1px solid #333; padding-bottom: 10px; }
+                .card { background-color: #1e1e1e; border: 1px solid #333; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+                .stat { display: inline-block; width: 30%; font-size: 1.2em; }
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                th, td { padding: 10px; border-bottom: 1px solid #333; text-align: left; }
+                .error { color: #ff5555; }
+            </style>
+        </head>
+        <body>
+            <h1>BITGOD Trading System</h1>
+
+            <div class="card">
+                <h2>System Health</h2>
+                <div class="stat">Status: <span id="status">Loading...</span></div>
+                <div class="stat">Uptime: <span id="uptime">0s</span></div>
+                <div class="stat">Memory: <span id="memory">0%</span></div>
+            </div>
+
+            <div class="card">
+                <h2>Metrics</h2>
+                <div class="stat">Active Bots: <span id="bots">0</span></div>
+                <div class="stat">Live Positions: <span id="positions">0</span></div>
+                <div class="stat">Pending Orders: <span id="orders">0</span></div>
+                <div class="stat">Errors: <span id="errors" class="error">0</span></div>
+            </div>
+
+            <div class="card">
+                <h2>Top Pairs (Internal)</h2>
+                <div id="pairs-list">Gathering pairs...</div>
+            </div>
+
+            <script>
+                async function fetchHealth() {
+                    try {
+                        const res = await fetch('/health');
+                        const data = await res.json();
+
+                        document.getElementById('status').innerText = data.status;
+                        document.getElementById('uptime').innerText = Math.round(data.uptime) + 's';
+
+                        if (data.metrics) {
+                            document.getElementById('memory').innerText = data.metrics.memory_percent + '%';
+                            document.getElementById('bots').innerText = data.metrics.active_bots;
+                            document.getElementById('positions').innerText = data.metrics.live_positions;
+                            document.getElementById('orders').innerText = data.metrics.pending_orders;
+                            document.getElementById('errors').innerText = data.metrics.heal_events;
+
+                            let pairsHtml = '<ul>';
+                            for (let sym of data.metrics.active_symbols) {
+                                pairsHtml += `<li>${sym}</li>`;
+                            }
+                            pairsHtml += '</ul>';
+                            if (data.metrics.active_symbols.length === 0) pairsHtml = 'No active symbols yet.';
+                            document.getElementById('pairs-list').innerHTML = pairsHtml;
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        document.getElementById('status').innerText = 'Connection Error';
+                        document.getElementById('status').classList.add('error');
+                    }
+                }
+                setInterval(fetchHealth, 3000);
+                fetchHealth();
+            </script>
+        </body>
+        </html>
+        """
+
     @app.get("/health")
     async def health():
         """Health check — Replit uptime monitor."""
