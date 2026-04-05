@@ -1,0 +1,27 @@
+16:17:39.544 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_KEY nie ustawiony
+16:17:39.545 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_SECRET nie ustawiony
+16:17:39.545 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_PASS nie ustawiony
+16:17:39.545 │ BITGOT·Orch                  │ INFO     │ ℹ️  PAPER MODE aktywny
+16:17:39.545 │ BITGOT·Orch                  │ INFO     │ ℹ️  TESTNET aktywny
+16:17:39.545 │ BITGOT·Orch                  │ INFO     │ 📡 Connecting to Bitget...
+16:17:39.556 │ BITGOT·Bitget                │ INFO     │ 📡 Łączę z Bitget...
+16:17:41.953 │ BITGOT·Bitget                │ ERROR    │ ❌ Bitget connect: object dict can't be used in 'await' expression
+16:17:41.953 │ BITGOT·Orch                  │ WARNING  │ ⚠️  Bitget offline — running in full simulation mode
+16:17:41.953 │ BITGOT·Orch                  │ INFO     │ 🔍 Discovering pairs for 5 bots...
+16:17:41.954 │ BITGOT·PairDisc              │ WARNING  │ Tylko 0 real par — padding do 5
+16:17:41.954 │ BITGOT·PairDisc              │ INFO     │ 🎯 Przydzielono 5 unikalnych par dla 5 botów
+16:17:41.954 │ BITGOT·PairDisc              │ INFO     │    Typy: {'futures_usdt': 4, 'spot': 1}
+16:17:41.954 │ BITGOT·PairDisc              │ INFO     │    Tiery: {'apex': 1, 'elite': 2, 'standard': 1, 'scout': 1}
+16:17:41.954 │ BITGOT·Orch                  │ INFO     │ ✅ 5 unique pairs assigned
+16:17:41.954 │ BITGOT·Orch                  │ INFO     │ 🧠 Building bot brains...
+16:17:43.482 │ BITGOT·Orch                  │ INFO     │   Built 0/5 brains...
+16:17:43.490 │ BITGOT·Orch                  │ INFO     │ ✅ 5 brains ready
+16:17:43.490 │ BITGOT·Orch                  │ INFO     │ ⚙️  Initializing E3 execution layer...
+16:17:43.490 │ BITGOT·E3                    │ INFO     │ ⚙️  BitgotSystemE3 INIT — 5 bots
+16:17:43.491 │ BITGOT·E3                    │ INFO     │ ✅ E3 initialized: 5 scouts, 5 executors
+16:17:43.553 │ BITGOT·Orch                  │ INFO     │ ✅ BITGOT fully initialized
+16:17:43.554 │ BITGOT·Orch                  │ INFO     │ ========================================================================
+16:17:43.554 │ BITGOT·Orch                  │ INFO     │   🚀 BITGOT LAUNCH — ALL SYSTEMS GO
+16:17:43.554 │ BITGOT·Orch                  │ INFO     │   Mode:    📄 PAPER
+16:17:43.554 │ BITGOT·Orch                  │ INFO     │   Bots:    5
+16:17:43.554 │ BITGOT·Orch                  │ INFO     │   Capital: $3,000.00

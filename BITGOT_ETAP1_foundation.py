@@ -2024,6 +2024,7 @@ class BITGOTDatabase:
         self._log = logging.getLogger("BITGOT·DB")
 
     def _init_schema(self):
+        self._log = logging.getLogger("BITGOT.DB")
         self._conn.executescript("""
         -- Boty
         CREATE TABLE IF NOT EXISTS bots (

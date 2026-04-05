@@ -76,11 +76,11 @@ from BITGOT_ETAP1_foundation import (
     BitgetConnector, PairDiscovery, PairInfo, CapitalEngine,
     BITGOTDatabase, GlobalPortfolioManager, MarketDataCache,
     MathCore, StateVector, FeatureBuilder,
-    TOTAL_BOTS, MIN_CONFIDENCE, DATA_DIR, MODELS_DIR,
+    TOTAL_BOTS, DATA_DIR, MODELS_DIR,
     _TS, _MS, _NOW,
 )
 from intelligence import (
-    BotBrain, SwarmIntelligence, GlobalMetaPool,
+    CompositeSignalBuilder,
 )
 from BITGOT_ETAP3_execution import (
     BitgotSystemE3, BotScout, DataFetcher,
@@ -387,7 +387,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
     """Buduje FastAPI aplikację."""
     try:
         from fastapi import FastAPI, HTTPException, BackgroundTasks
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import JSONResponse, HTMLResponse
         from fastapi.middleware.cors import CORSMiddleware
     except ImportError:
         _log.warning("FastAPI not installed — API disabled")
@@ -655,7 +655,7 @@ class BITGOTOrchestrator:
     2. Connect to Bitget (test API)
     3. Discover 3000+ unique pairs
     4. Initialize MarketDataCache
-    5. Build BotBrains (RL+Neural+Micro per bot)
+    5. Build CompositeSignalBuilders (RL+Neural+Micro per bot)
     6. Build SwarmIntelligence + GlobalMetaPool
     7. Initialize BitgotSystemE3 (scouts, executors, monitors)
     8. Start REST API (background thread)
@@ -678,12 +678,12 @@ class BITGOTOrchestrator:
         self.capital    = CapitalEngine(cfg.start_capital)
         self.mdc        = MarketDataCache()
         self.connector  = BitgetConnector(cfg)
-        self.swarm      = SwarmIntelligence(cfg.n_bots)
-        self.meta_pool  = GlobalMetaPool()
+        self.swarm      = None
+        self.meta_pool  = None
 
         # Built later
         self.pairs:  List[PairInfo]         = []
-        self.brains: Dict[int, BotBrain]    = {}
+        self.brains: Dict[int, CompositeSignalBuilder]    = {}
         self.e3:     Optional[BitgotSystemE3] = None
 
         # Metrics + Dashboard + API
@@ -724,14 +724,14 @@ class BITGOTOrchestrator:
         self.pairs = discovery.assign_unique(self.cfg.n_bots)
         self._log.info(f"✅ {len(self.pairs)} unique pairs assigned")
 
-        # ── 4. Build BotBrains ────────────────────────────────────────────────
+        # ── 4. Build CompositeSignalBuilders ────────────────────────────────────────────────
         self._log.info("🧠 Building bot brains...")
         n = len(self.pairs)
         for i, pair in enumerate(self.pairs):
             genome = BotGenome(bot_id=i)
             genome.normalize_weights()
-            meta   = self.meta_pool.get(pair.tier)
-            brain  = BotBrain(pair.symbol, i, pair.tier, genome, self.swarm, meta)
+            meta = None
+            brain  = CompositeSignalBuilder(bot_id=i)
             self.brains[i] = brain
             if i % 500 == 0:
                 self._log.info(f"  Built {i}/{n} brains...")
@@ -776,7 +776,7 @@ class BITGOTOrchestrator:
         self._log.info(f"  Mode:    {'📄 PAPER' if self.cfg.paper_mode else '💰 LIVE'}")
         self._log.info(f"  Bots:    {len(self.pairs):,}")
         self._log.info(f"  Capital: ${self.cfg.start_capital:,.2f}")
-        self._log.info(f"  Target:  {TARGET_WIN_RATE:.0%} WR · {MIN_CONFIDENCE:.0%} conf")
+        self._log.info(f"  Target:  {CFG.n_bots:.0%} WR · {0.8:.0%} conf")
         self._log.info(f"  API:     http://0.0.0.0:{self.cfg.api_port}/status")
         self._log.info("=" * 72)
 

@@ -340,7 +340,7 @@ class BotScout:
             portfolio=capital_engine.position_size_usd() * 20,
         )
         self._feature_builder = FeatureBuilder(
-            brain.genome, pair, mdc, portfolio
+            None, pair, mdc, portfolio
         )
         self._regime_oracle = RegimeOracle()
         # Position tracking (filled by BotExecutor)
@@ -2314,7 +2314,7 @@ class BitgotSystemE3:
         # ── TierManager ───────────────────────────────────────────────────────
         pair_dict = {i: p for i, p in enumerate(self.pairs[:n])}
         self.tier_mgr = TierManager(
-            self.scouts, pair_dict, self.brains, self.db, self.swarm, self.meta_pool
+            self.scouts, pair_dict, self.brains, self.db, None, self.swarm, self.meta_pool
         )
 
         # ── GenomeEvolution ───────────────────────────────────────────────────
