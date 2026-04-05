@@ -16,7 +16,7 @@
 ║                                                                                              ║
 ║  ▸ BotScout          — jeden zwiadowca per para, buduje StateVector(80D) co tick           ║
 ║    Zbiera: OHLCV (5 TF) · Order Book · Funding · OI · Trade Flow · Whale                  ║
-║    Wysyła: gotowy StateVector do BotBrain + sygnał do SignalManager                        ║
+║    Wysyła: gotowy StateVector do CompositeSignalBuilder + sygnał do SignalManager                        ║
 ║                                                                                              ║
 ║  ▸ SignalManager     — centralny filtr sygnałów (80% threshold enforced)                   ║
 ║    Waliduje → priorytetyzuje → limit max pozycji → routuje do BotExecutor                  ║
@@ -80,25 +80,55 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import numpy as np
 
 # ── Importy z poprzednich etapów ──────────────────────────────────────────────
-from bitgot_e1 import (
-    CFG, BITGOTConfig, Action, BotTier, BotStatus, MarketType,
-    PairInfo, BotTrade, BotState, GlobalPortfolio, TradingSignal,
-    OmegaError, HealAction, HealResult, Severity, ErrorCat,
-    BotGenome, StateVector, MarketSnapshot, MarketDataCache,
-    FeatureBuilder, RegimeOracle, BitgetConnector, PairDiscovery,
-    CapitalEngine, BITGOTDatabase, GlobalPortfolioManager,
-    MathCore, NumpyMLP, PrioritizedReplayBuffer, AdamOptimizer,
-    detect_manipulation, QuickValidator,
-    TOTAL_BOTS, MIN_CONFIDENCE, TARGET_WIN_RATE, STATE_DIM,
-    N_ACTIONS, MODELS_DIR, DATA_DIR, _TS, _MS, _NOW,
-    FEE_MAKER, FEE_TAKER,
+from BITGOT_ETAP1_foundation import (
+    Action,
+    AdamOptimizer,
+    BITGOTConfig,
+    BITGOTDatabase,
+    BitgetConnector,
+    BotGenome,
+    BotState,
+    BotStatus,
+    BotTier,
+    BotTrade,
+    CFG,
+    CapitalEngine,
+    CapitalTier,
+    DATA_DIR,
+    ErrorCat,
+    FEE_TAKER,
+    FeatureBuilder,
+    GlobalPortfolio,
+    GlobalPortfolioManager,
+    HealAction,
+    HealResult,
+    MIN_CONFIDENCE,
+    MarketDataCache,
+    MarketSnapshot,
+    MarketType,
+    MathCore,
+    NumpyMLP,
+    OmegaError,
+    PairDiscovery,
+    PairInfo,
+    PrioritizedReplayBuffer,
+    QuickValidator,
+    RegimeOracle,
+    Severity,
+    SignalState,
+    StateVector,
+    TOTAL_BOTS,
+    TradingSignal,
+    UTC,
+    _MS,
+    _NOW,
+    _TS,
+    detect_manipulation,
 )
-from bitgot_e2 import (
-    BotBrain, SwarmIntelligence, GlobalMetaPool,
-    CouncilVerdict, SignalCouncil, AdversarialShield,
-    RLEngineCluster, NeuralSwarm, MicroSignalEngine,
-    TIER_ENGINE_CLASSES,
-)
+
+
+
+from intelligence import CompositeSignalBuilder
 
 _log = logging.getLogger("BITGOT·E3")
 
@@ -278,8 +308,8 @@ class BotScout:
     
     Odpowiada za:
     1. Budowanie StateVector(80D) z MarketDataCache
-    2. Analizę przez BotBrain (RL + Neural + Micro)
-    3. Przekazanie CouncilVerdict do SignalManager
+    2. Analizę przez CompositeSignalBuilder (RL + Neural + Micro)
+    3. Przekazanie  do SignalManager
     4. Aktualizację MicroSignalEngine co tick
     
     NIE wykonuje zleceń — to rola BotExecutor.
@@ -288,7 +318,7 @@ class BotScout:
     Tick interval: 500ms (2Hz) → ~200k transakcji / dzień przy 3000 botów
     """
 
-    def __init__(self, bot_id: int, pair: PairInfo, brain: BotBrain,
+    def __init__(self, bot_id: int, pair: PairInfo, brain: CompositeSignalBuilder,
                   mdc: MarketDataCache, capital_engine: CapitalEngine,
                   portfolio: GlobalPortfolioManager, signal_queue: asyncio.Queue,
                   swarm: SwarmIntelligence):
@@ -310,7 +340,7 @@ class BotScout:
             portfolio=capital_engine.position_size_usd() * 20,
         )
         self._feature_builder = FeatureBuilder(
-            brain.genome, pair, mdc, portfolio
+            None, pair, mdc, portfolio
         )
         self._regime_oracle = RegimeOracle()
         # Position tracking (filled by BotExecutor)
@@ -374,7 +404,7 @@ class BotScout:
         if sv is None:
             return
 
-        # Brain analysis → CouncilVerdict
+        # Brain analysis →
         gp_halted = self.port.check_halt()[0]
         verdict = self.brain.analyze(
             sv,
@@ -697,7 +727,7 @@ class LivePosition:
     signal:       Optional[TradingSignal] = None
     genome:       Optional[BotGenome]    = None
     scout:        Optional[BotScout]     = None
-    brain:        Optional[BotBrain]     = None
+    brain:        Optional[CompositeSignalBuilder]     = None
     status:       str          = "open"   # open / closing / closed
 
     @property
@@ -836,7 +866,7 @@ class BotExecutor:
             order_id = f"paper_{uuid.uuid4().hex[:8]}"
 
         # ── Recalculate SL/TP with actual entry ────────────────────────────────
-        sl_price, tp_price = CFG.position_size_usd and self._calc_sl_tp(
+        sl_price, tp_price = self._calc_sl_tp(
             entry_price, sig.side, sig.leverage
         )
 
@@ -943,7 +973,7 @@ class BotExecutor:
         pnl   = gross - fees
         pnl_pct = pnl / max(pos.notional, 1e-12) * 100
         roi_pct = pnl / max(pos.margin, 1e-12) * 100
-        duration = _MS() - pos.entry_ts if hasattr(pos, 'entry_ts') else 0
+        duration = _MS() - pos.open_ts if hasattr(pos, 'open_ts') else 0
 
         trade = BotTrade(
             bot_id      = pos.bot_id,
@@ -1835,10 +1865,10 @@ class TierManager:
 
     def __init__(self, scouts: Dict[int, BotScout],
                   pairs:   Dict[int, PairInfo],
-                  brains:  Dict[int, BotBrain],
+                  brains:  Dict[int, CompositeSignalBuilder],
                   db:      BITGOTDatabase,
-                  swarm:   SwarmIntelligence,
-                  meta_pool: GlobalMetaPool):
+                  swarm: Any,  Any,
+                  meta_pool: Any):
         self.scouts    = scouts
         self.pairs     = pairs
         self.brains    = brains
@@ -1987,7 +2017,7 @@ class GenomeEvolution:
     SIGMA_INIT  = 0.08
     EVO_INTERVAL= 3600.0
 
-    def __init__(self, scouts: Dict[int, BotScout], brains: Dict[int, BotBrain],
+    def __init__(self, scouts: Dict[int, BotScout], brains: Dict[int, CompositeSignalBuilder],
                   db: BITGOTDatabase):
         self.scouts = scouts; self.brains = brains; self.db = db
         self._log   = logging.getLogger("BITGOT·Evo")
@@ -2193,8 +2223,8 @@ class BitgotSystemE3:
     """
 
     def __init__(self, connector: BitgetConnector, pairs: List[PairInfo],
-                  brains: Dict[int, BotBrain], swarm: SwarmIntelligence,
-                  meta_pool: GlobalMetaPool, capital: CapitalEngine,
+                  brains: Dict[int, CompositeSignalBuilder], swarm: Any,
+                  meta_pool: Any, capital: CapitalEngine,
                   portfolio: GlobalPortfolioManager, db: BITGOTDatabase,
                   mdc: MarketDataCache, cfg: BITGOTConfig = CFG):
         self.conn     = connector
@@ -2284,7 +2314,7 @@ class BitgotSystemE3:
         # ── TierManager ───────────────────────────────────────────────────────
         pair_dict = {i: p for i, p in enumerate(self.pairs[:n])}
         self.tier_mgr = TierManager(
-            self.scouts, pair_dict, self.brains, self.db, self.swarm, self.meta_pool
+            self.scouts, pair_dict, self.brains, self.db, None, self.swarm, self.meta_pool
         )
 
         # ── GenomeEvolution ───────────────────────────────────────────────────

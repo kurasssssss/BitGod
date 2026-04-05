@@ -1,0 +1,16 @@
+16:03:38.078 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_KEY nie ustawiony
+16:03:38.078 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_SECRET nie ustawiony
+16:03:38.078 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_PASS nie ustawiony
+16:03:38.078 │ BITGOT·Orch                  │ INFO     │ ℹ️  PAPER MODE aktywny
+16:03:38.078 │ BITGOT·Orch                  │ INFO     │ ℹ️  TESTNET aktywny
+16:03:38.079 │ BITGOT·Orch                  │ INFO     │ 📡 Connecting to Bitget...
+16:03:38.091 │ BITGOT·Bitget                │ INFO     │ 📡 Łączę z Bitget...
+16:03:40.621 │ BITGOT·Bitget                │ ERROR    │ ❌ Bitget connect: object dict can't be used in 'await' expression
+16:03:40.621 │ BITGOT·Orch                  │ WARNING  │ ⚠️  Bitget offline — running in full simulation mode
+16:03:40.621 │ BITGOT·Orch                  │ INFO     │ 🔍 Discovering pairs for 5 bots...
+16:03:40.622 │ BITGOT·PairDisc              │ WARNING  │ Tylko 0 real par — padding do 5
+16:03:40.622 │ BITGOT·PairDisc              │ INFO     │ 🎯 Przydzielono 5 unikalnych par dla 5 botów
+16:03:40.623 │ BITGOT·PairDisc              │ INFO     │    Typy: {'futures_usdt': 4, 'spot': 1}
+16:03:40.623 │ BITGOT·PairDisc              │ INFO     │    Tiery: {'apex': 1, 'elite': 2, 'standard': 1, 'scout': 1}
+16:03:40.623 │ BITGOT·Orch                  │ INFO     │ ✅ 5 unique pairs assigned
+16:03:40.623 │ BITGOT·Orch                  │ INFO     │ 🧠 Building bot brains...

@@ -1,0 +1,50 @@
+
+[1m[96m
+  ██████╗ ██╗████████╗ ██████╗  ██████╗ ████████╗
+  ██╔══██╗██║╚══██╔══╝██╔════╝ ██╔═══██╗╚══██╔══╝
+  ██████╔╝██║   ██║   ██║  ███╗██║   ██║   ██║
+  ██╔══██╗██║   ██║   ██║   ██║██║   ██║   ██║
+  ██████╔╝██║   ██║   ╚██████╔╝╚██████╔╝   ██║
+  ╚═════╝ ╚═╝   ╚═╝    ╚═════╝  ╚═════╝    ╚═╝   [0m
+[93m  3000 Bot Bitget Supremacy System  v∞.0[0m
+[92m  85%+ WR Target · 200k Trades/Day · Self-Evolving[0m
+
+16:20:00.666 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_KEY nie ustawiony
+16:20:00.666 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_SECRET nie ustawiony
+16:20:00.666 │ BITGOT·Orch                  │ INFO     │ ⚠️  BITGET_PASS nie ustawiony
+16:20:00.666 │ BITGOT·Orch                  │ INFO     │ ℹ️  PAPER MODE aktywny
+16:20:00.666 │ BITGOT·Orch                  │ INFO     │ ℹ️  TESTNET aktywny
+16:20:00.666 │ BITGOT·Orch                  │ INFO     │ 📡 Connecting to Bitget...
+16:20:00.678 │ BITGOT·Bitget                │ INFO     │ 📡 Łączę z Bitget...
+16:20:03.097 │ BITGOT·Bitget                │ ERROR    │ ❌ Bitget connect: object dict can't be used in 'await' expression
+16:20:03.098 │ BITGOT·Orch                  │ WARNING  │ ⚠️  Bitget offline — running in full simulation mode
+16:20:03.098 │ BITGOT·Orch                  │ INFO     │ 🔍 Discovering pairs for 5 bots...
+16:20:03.098 │ BITGOT·PairDisc              │ WARNING  │ Tylko 0 real par — padding do 5
+16:20:03.098 │ BITGOT·PairDisc              │ INFO     │ 🎯 Przydzielono 5 unikalnych par dla 5 botów
+16:20:03.099 │ BITGOT·PairDisc              │ INFO     │    Typy: {'futures_usdt': 4, 'spot': 1}
+16:20:03.099 │ BITGOT·PairDisc              │ INFO     │    Tiery: {'apex': 1, 'elite': 2, 'standard': 1, 'scout': 1}
+16:20:03.099 │ BITGOT·Orch                  │ INFO     │ ✅ 5 unique pairs assigned
+16:20:03.099 │ BITGOT·Orch                  │ INFO     │ 🧠 Building bot brains...
+16:20:04.610 │ BITGOT·Orch                  │ INFO     │   Built 0/5 brains...
+16:20:04.617 │ BITGOT·Orch                  │ INFO     │ ✅ 5 brains ready
+16:20:04.618 │ BITGOT·Orch                  │ INFO     │ ⚙️  Initializing E3 execution layer...
+16:20:04.618 │ BITGOT·E3                    │ INFO     │ ⚙️  BitgotSystemE3 INIT — 5 bots
+16:20:04.619 │ BITGOT·E3                    │ INFO     │ ✅ E3 initialized: 5 scouts, 5 executors
+16:20:04.658 │ BITGOT·Orch                  │ INFO     │ ✅ BITGOT fully initialized
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │ ========================================================================
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │   🚀 BITGOT LAUNCH — ALL SYSTEMS GO
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │   Mode:    📄 PAPER
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │   Bots:    5
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │   Capital: $3,000.00
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │   Target:  500% WR · 80% conf
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │   API:     http://0.0.0.0:8888/status
+16:20:04.659 │ BITGOT·Orch                  │ INFO     │ ========================================================================
+16:20:04.661 │ BITGOT·Orch                  │ INFO     │ 🌐 REST API started on port 8888
+16:20:04.661 │ BITGOT·E3                    │ INFO     │ 🚀 BitgotSystemE3 — ALL SYSTEMS LAUNCH
+16:20:04.661 │ BITGOT·E3                    │ INFO     │   14 async tasks launched
+16:20:04.662 │ BITGOT·DataFetcher           │ INFO     │ 📡 DataFetcher START — 5 symboli
+16:20:04.662 │ BITGOT·SigProc               │ INFO     │ 📨 SignalQueueProcessor START
+16:20:04.662 │ BITGOT·PosMon                │ INFO     │ 📊 PositionMonitor START (10Hz)
+16:20:04.662 │ BITGOT·Omega                 │ INFO     │ 🛡️  OmegaHealer START (Level 1: OBSERVER)
+16:20:04.663 │ BITGOT·TierMgr               │ INFO     │ 📊 TierManager START
+16:20:04.663 │ BITGOT·Evo                   │ INFO     │ 🧬 GenomeEvolution START

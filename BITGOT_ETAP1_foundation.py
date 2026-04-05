@@ -131,8 +131,8 @@ _log = logging.getLogger("BITGOT·CORE")
 # CONSTANTS — ABSOLUTNE PARAMETRY SYSTEMU (nie zmieniaj bez przemyślenia)
 # ══════════════════════════════════════════════════════════════════════════════════════════
 
-TOTAL_BOTS              = 3_000     # każdy bot = unikalna para
-TARGET_TRADES_PER_DAY   = 200_000   # 200k trades/dzień = ~66.7/bot
+TOTAL_BOTS              = 100     # każdy bot = unikalna para
+TARGET_TRADES_PER_DAY   = 500   # 200k trades/dzień = ~66.7/bot
 TRADES_PER_BOT_PER_DAY  = TARGET_TRADES_PER_DAY / TOTAL_BOTS   # ≈66.7
 TRADE_INTERVAL_S        = 86_400 / TRADES_PER_BOT_PER_DAY      # ≈21.6 minut
 
@@ -186,8 +186,8 @@ class BITGOTConfig:
     testnet:        bool  = True       # Bitget sandbox
 
     # ── Rój ───────────────────────────────────────────────────────────────────────
-    n_bots:         int   = TOTAL_BOTS
-    n_executors:    int   = TOTAL_BOTS   # 1:1 scout:executor
+    n_bots:         int   = 100
+    n_executors:    int   = 100   # 1:1 scout:executor
 
     # ── Rynki ─────────────────────────────────────────────────────────────────────
     markets: List[str]    = field(default_factory=lambda: [
@@ -196,7 +196,7 @@ class BITGOTConfig:
         "spot",              # Spot market
     ])
     # Minimalne wymagania dla pary
-    min_volume_usdt_24h:  float = 1_000_000.0   # min $1M dzienny wolumen
+    min_volume_usdt_24h:  float = 50_000_000.0   # min $1M dzienny wolumen
     min_price:            float = 0.0001
     max_spread_pct:       float = 0.08           # max 0.08% spread
     min_vol_1h_pct:       float = 0.08           # min 0.08% zmienności/h
@@ -208,9 +208,9 @@ class BITGOTConfig:
     # Każdy bot przeznacza base_position_pct% AKTUALNEGO portfela per transakcję
     # Przykład: portfel $3000, base=0.033% → $1/bot
     #           portfel $6000, base=0.033% → $2/bot (automatyczny wzrost)
-    base_position_pct:    float = 0.0333         # 0.0333% kapitału per transakcja
+    base_position_pct:    float = 1.0         # 0.0333% kapitału per transakcja
     min_position_usd:     float = 1.0            # absolutne minimum $1
-    max_position_pct:     float = 0.10           # max 10% kapitału na jedną pozycję
+    max_position_pct:     float = 5.00           # max 10% kapitału na jedną pozycję
     kelly_fraction:       float = 0.25           # ułamek Kelly (konserwatywny)
 
     # ── Dźwignia ─────────────────────────────────────────────────────────────────
@@ -345,7 +345,7 @@ class BotTier(Enum):
         return {self.APEX:0.52, self.ELITE:0.55, self.STANDARD:0.58, self.SCOUT:0.62}[self]
 
     def max_leverage(self) -> int:
-        return {self.APEX:125, self.ELITE:75, self.STANDARD:50, self.SCOUT:25}[self]
+        return {self.APEX:100, self.ELITE:75, self.STANDARD:50, self.SCOUT:25}[self]
 
     @classmethod
     def from_wr(cls, wr: float) -> 'BotTier':
@@ -2024,6 +2024,7 @@ class BITGOTDatabase:
         self._log = logging.getLogger("BITGOT·DB")
 
     def _init_schema(self):
+        self._log = logging.getLogger("BITGOT.DB")
         self._conn.executescript("""
         -- Boty
         CREATE TABLE IF NOT EXISTS bots (

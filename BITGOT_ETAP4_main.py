@@ -71,18 +71,18 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 # ── Importy z poprzednich etapów ──────────────────────────────────────────────
-from bitgot_e1 import (
+from BITGOT_ETAP1_foundation import (
     CFG, BITGOTConfig, BotTier, BotState, BotGenome,
     BitgetConnector, PairDiscovery, PairInfo, CapitalEngine,
     BITGOTDatabase, GlobalPortfolioManager, MarketDataCache,
     MathCore, StateVector, FeatureBuilder,
-    TOTAL_BOTS, MIN_CONFIDENCE, DATA_DIR, MODELS_DIR,
+    TOTAL_BOTS, DATA_DIR, MODELS_DIR,
     _TS, _MS, _NOW,
 )
-from bitgot_e2 import (
-    BotBrain, SwarmIntelligence, GlobalMetaPool,
+from intelligence import (
+    CompositeSignalBuilder,
 )
-from bitgot_e3 import (
+from BITGOT_ETAP3_execution import (
     BitgotSystemE3, BotScout, DataFetcher,
     CircuitBreakers, OmegaHealerDaemon, TierManager,
     GenomeEvolution, SignalManager,
@@ -387,7 +387,7 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
     """Buduje FastAPI aplikację."""
     try:
         from fastapi import FastAPI, HTTPException, BackgroundTasks
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import JSONResponse, HTMLResponse
         from fastapi.middleware.cors import CORSMiddleware
     except ImportError:
         _log.warning("FastAPI not installed — API disabled")
@@ -402,6 +402,86 @@ def build_api(orchestrator: "BITGOTOrchestrator", metrics: MetricsEngine):
         CORSMiddleware,
         allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
     )
+
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    async def get_dashboard():
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>BITGOD Dashboard</title>
+            <style>
+                body { font-family: 'Courier New', Courier, monospace; background-color: #121212; color: #00ff00; margin: 0; padding: 20px; }
+                h1 { color: #00ff00; border-bottom: 1px solid #333; padding-bottom: 10px; }
+                .card { background-color: #1e1e1e; border: 1px solid #333; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+                .stat { display: inline-block; width: 30%; font-size: 1.2em; }
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                th, td { padding: 10px; border-bottom: 1px solid #333; text-align: left; }
+                .error { color: #ff5555; }
+            </style>
+        </head>
+        <body>
+            <h1>BITGOD Trading System</h1>
+
+            <div class="card">
+                <h2>System Health</h2>
+                <div class="stat">Status: <span id="status">Loading...</span></div>
+                <div class="stat">Uptime: <span id="uptime">0s</span></div>
+                <div class="stat">Memory: <span id="memory">0%</span></div>
+            </div>
+
+            <div class="card">
+                <h2>Metrics</h2>
+                <div class="stat">Active Bots: <span id="bots">0</span></div>
+                <div class="stat">Live Positions: <span id="positions">0</span></div>
+                <div class="stat">Pending Orders: <span id="orders">0</span></div>
+                <div class="stat">Errors: <span id="errors" class="error">0</span></div>
+            </div>
+
+            <div class="card">
+                <h2>Top Pairs (Internal)</h2>
+                <div id="pairs-list">Gathering pairs...</div>
+            </div>
+
+            <script>
+                async function fetchHealth() {
+                    try {
+                        const res = await fetch('/health');
+                        const data = await res.json();
+
+                        document.getElementById('status').innerText = data.status;
+                        document.getElementById('uptime').innerText = Math.round(data.uptime) + 's';
+
+                        if (data.metrics) {
+                            document.getElementById('memory').innerText = data.metrics.memory_percent + '%';
+                            document.getElementById('bots').innerText = data.metrics.active_bots;
+                            document.getElementById('positions').innerText = data.metrics.live_positions;
+                            document.getElementById('orders').innerText = data.metrics.pending_orders;
+                            document.getElementById('errors').innerText = data.metrics.heal_events;
+
+                            let pairsHtml = '<ul>';
+                            for (let sym of data.metrics.active_symbols) {
+                                pairsHtml += `<li>${sym}</li>`;
+                            }
+                            pairsHtml += '</ul>';
+                            if (data.metrics.active_symbols.length === 0) pairsHtml = 'No active symbols yet.';
+                            document.getElementById('pairs-list').innerHTML = pairsHtml;
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        document.getElementById('status').innerText = 'Connection Error';
+                        document.getElementById('status').classList.add('error');
+                    }
+                }
+                setInterval(fetchHealth, 3000);
+                fetchHealth();
+            </script>
+        </body>
+        </html>
+        """
 
     @app.get("/health")
     async def health():
@@ -575,7 +655,7 @@ class BITGOTOrchestrator:
     2. Connect to Bitget (test API)
     3. Discover 3000+ unique pairs
     4. Initialize MarketDataCache
-    5. Build BotBrains (RL+Neural+Micro per bot)
+    5. Build CompositeSignalBuilders (RL+Neural+Micro per bot)
     6. Build SwarmIntelligence + GlobalMetaPool
     7. Initialize BitgotSystemE3 (scouts, executors, monitors)
     8. Start REST API (background thread)
@@ -598,12 +678,12 @@ class BITGOTOrchestrator:
         self.capital    = CapitalEngine(cfg.start_capital)
         self.mdc        = MarketDataCache()
         self.connector  = BitgetConnector(cfg)
-        self.swarm      = SwarmIntelligence(cfg.n_bots)
-        self.meta_pool  = GlobalMetaPool()
+        self.swarm      = None
+        self.meta_pool  = None
 
         # Built later
         self.pairs:  List[PairInfo]         = []
-        self.brains: Dict[int, BotBrain]    = {}
+        self.brains: Dict[int, CompositeSignalBuilder]    = {}
         self.e3:     Optional[BitgotSystemE3] = None
 
         # Metrics + Dashboard + API
@@ -644,14 +724,14 @@ class BITGOTOrchestrator:
         self.pairs = discovery.assign_unique(self.cfg.n_bots)
         self._log.info(f"✅ {len(self.pairs)} unique pairs assigned")
 
-        # ── 4. Build BotBrains ────────────────────────────────────────────────
+        # ── 4. Build CompositeSignalBuilders ────────────────────────────────────────────────
         self._log.info("🧠 Building bot brains...")
         n = len(self.pairs)
         for i, pair in enumerate(self.pairs):
             genome = BotGenome(bot_id=i)
             genome.normalize_weights()
-            meta   = self.meta_pool.get(pair.tier)
-            brain  = BotBrain(pair.symbol, i, pair.tier, genome, self.swarm, meta)
+            meta = None
+            brain  = CompositeSignalBuilder(bot_id=i)
             self.brains[i] = brain
             if i % 500 == 0:
                 self._log.info(f"  Built {i}/{n} brains...")
@@ -696,7 +776,7 @@ class BITGOTOrchestrator:
         self._log.info(f"  Mode:    {'📄 PAPER' if self.cfg.paper_mode else '💰 LIVE'}")
         self._log.info(f"  Bots:    {len(self.pairs):,}")
         self._log.info(f"  Capital: ${self.cfg.start_capital:,.2f}")
-        self._log.info(f"  Target:  {TARGET_WIN_RATE:.0%} WR · {MIN_CONFIDENCE:.0%} conf")
+        self._log.info(f"  Target:  {CFG.n_bots:.0%} WR · {0.8:.0%} conf")
         self._log.info(f"  API:     http://0.0.0.0:{self.cfg.api_port}/status")
         self._log.info("=" * 72)
 
