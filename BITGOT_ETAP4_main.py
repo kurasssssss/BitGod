@@ -76,7 +76,7 @@ from bitgot_e1 import (
     BitgetConnector, PairDiscovery, PairInfo, CapitalEngine,
     BITGOTDatabase, GlobalPortfolioManager, MarketDataCache,
     MathCore, StateVector, FeatureBuilder,
-    TOTAL_BOTS, MIN_CONFIDENCE, DATA_DIR, MODELS_DIR,
+    TOTAL_BOTS, MIN_CONFIDENCE, TARGET_WIN_RATE, DATA_DIR, MODELS_DIR,
     _TS, _MS, _NOW,
 )
 from bitgot_e2 import (
