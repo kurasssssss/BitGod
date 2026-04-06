@@ -335,7 +335,8 @@ class LiveDashboard:
             vals = [v for _, v in curve]
             chart = self._mini_chart(vals, width=40, height=4)
             print(f"\n  Equity curve (last {len(curve)} pts):")
-            for line in chart: print(f"  {self.DM}{line}{self.RS}")
+            if chart:
+                print("\n".join(f"  {self.DM}{line}{self.RS}" for line in chart))
 
         # Top 5 bots
         top = self.metrics.top_bots(5)
