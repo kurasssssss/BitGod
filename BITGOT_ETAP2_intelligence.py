@@ -68,6 +68,7 @@ from bitgot_e1 import *
 import copy
 import hashlib
 import threading
+import concurrent.futures
 import time
 import math
 import random
@@ -3218,6 +3219,7 @@ class TierManager:
         self.db  = db
         self._promotions = 0; self._demotions = 0
         self._log = logging.getLogger("BITGOT·TierMgr")
+        self._lock = threading.Lock()
 
     def check(self, state: BotState) -> Optional[BotTier]:
         """
@@ -3247,12 +3249,17 @@ class TierManager:
         # Tier enum ordering: APEX > ELITE > STANDARD > SCOUT
         tier_rank = {BotTier.APEX: 3, BotTier.ELITE: 2, BotTier.STANDARD: 1, BotTier.SCOUT: 0}
         promoted = tier_rank[new_tier] > tier_rank[old]
+
+        with self._lock:
+            if promoted:
+                state.promotions += 1; self._promotions += 1
+            else:
+                state.demotions += 1; self._demotions += 1
+
         if promoted:
-            state.promotions += 1; self._promotions += 1
             self._log.info(f"⬆️  Bot {state.bot_id} {old.value}→{new_tier.value} "
                             f"WR={state.win_rate:.1%} T={state.n_trades}")
         else:
-            state.demotions += 1; self._demotions += 1
             self._log.info(f"⬇️  Bot {state.bot_id} {old.value}→{new_tier.value} "
                             f"WR={state.win_rate:.1%} T={state.n_trades}")
         state.tier = new_tier
@@ -3629,14 +3636,32 @@ class IntelligenceCore:
     def tier_rebalance(self, states: List[BotState]) -> Tuple[int, int]:
         """Rebalance tiers for all bots. Returns (promoted, demoted)."""
         promoted = demoted = 0
+        to_execute = []
+
+        # 1. Fast, in-memory check phase (filters out the N states)
         for state in states:
             new_tier = self.tier_mgr.check(state)
-            if new_tier and self.tier_mgr.execute(state, new_tier):
-                if (new_tier.value in [BotTier.APEX.value, BotTier.ELITE.value,
+            if new_tier:
+                to_execute.append((state, new_tier))
+
+        if not to_execute:
+            return 0, 0
+
+        # 2. Parallel execute phase for states that require an update
+        # Eliminates N+1 bottleneck if execute() contains blocking IO (like DB saves or synchronous logging)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(to_execute))) as executor:
+            futures = []
+            for state, new_tier in to_execute:
+                futures.append(executor.submit(self.tier_mgr.execute, state, new_tier))
+
+            for future, (state, new_tier) in zip(futures, to_execute):
+                if future.result():
+                    if (new_tier.value in [BotTier.APEX.value, BotTier.ELITE.value,
                                          BotTier.STANDARD.value]
-                        and state.promotions > state.demotions):
-                    promoted += 1
-                else: demoted += 1
+                            and state.promotions > state.demotions):
+                        promoted += 1
+                    else: demoted += 1
+
         return promoted, demoted
 
     def distillation_signal(self, tier: BotTier, symbol: str, regime: str) -> float:
