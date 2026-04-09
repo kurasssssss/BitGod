@@ -82,7 +82,7 @@ import numpy as np
 # ── Importy z poprzednich etapów ──────────────────────────────────────────────
 from bitgot_e1 import (
     CFG, BITGOTConfig, Action, BotTier, BotStatus, MarketType,
-    PairInfo, BotTrade, BotState, GlobalPortfolio, TradingSignal,
+    PairInfo, BotTrade, BotState, TradingSignal,
     OmegaError, HealAction, HealResult, Severity, ErrorCat,
     BotGenome, StateVector, MarketSnapshot, MarketDataCache,
     FeatureBuilder, RegimeOracle, BitgetConnector, PairDiscovery,
