@@ -2018,10 +2018,52 @@ class BITGOTDatabase:
         self._err_q:    List[OmegaError] = []
         self._heal_q:   List[HealAction] = []
         self._metric_q: List[Dict] = []
-        self._init_schema()
-        self._flush_thread = threading.Thread(target=self._batch_flush_loop, daemon=True)
-        self._flush_thread.start()
         self._log = logging.getLogger("BITGOT·DB")
+        self._init_schema()
+
+        self._stop_event = None
+        self._flush_task = None
+        self._loop = None
+        self._stop_event_thread = None
+        self._flush_thread = None
+
+        # We try to use an asyncio Task if there's a running loop,
+        # otherwise fallback to a standard thread (e.g., during some sync tests).
+        try:
+            self._loop = asyncio.get_running_loop()
+            self._stop_event = asyncio.Event()
+            self._flush_task = self._loop.create_task(self._batch_flush_loop())
+        except RuntimeError:
+            self._stop_event_thread = threading.Event()
+            self._flush_thread = threading.Thread(target=self._batch_flush_loop_thread, daemon=True)
+            self._flush_thread.start()
+
+    async def _batch_flush_loop(self):
+        """Proper async background task for flushing."""
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.sleep(self.BATCH_INTERVAL)
+            except asyncio.CancelledError:
+                break
+
+            if self._stop_event.is_set():
+                break
+
+            try:
+                # Run the blocking sqlite3 flush in a thread pool to avoid blocking the event loop
+                await asyncio.to_thread(self._flush)
+            except Exception as e:
+                if hasattr(self, '_log'): self._log.debug(f"Flush: {e}")
+
+    def _batch_flush_loop_thread(self):
+        """Fallback for synchronous initialization context."""
+        while not self._stop_event_thread.is_set():
+            self._stop_event_thread.wait(self.BATCH_INTERVAL)
+            if self._stop_event_thread.is_set():
+                break
+            try: self._flush()
+            except Exception as e:
+                if hasattr(self, '_log'): self._log.debug(f"Flush: {e}")
 
     def _init_schema(self):
         self._conn.executescript("""
@@ -2188,13 +2230,6 @@ class BITGOTDatabase:
         """)
         self._conn.commit()
         self._log.debug("Schema initialized")
-
-    def _batch_flush_loop(self):
-        while True:
-            time.sleep(self.BATCH_INTERVAL)
-            try: self._flush()
-            except Exception as e:
-                if hasattr(self, '_log'): self._log.debug(f"Flush: {e}")
 
     def _flush(self):
         with self._lock:
@@ -2378,6 +2413,15 @@ class BITGOTDatabase:
 
     def close(self):
         try:
+            if getattr(self, '_stop_event_thread', None):
+                self._stop_event_thread.set()
+
+            if getattr(self, '_loop', None) and getattr(self, '_stop_event', None):
+                if not self._loop.is_closed():
+                    self._loop.call_soon_threadsafe(self._stop_event.set)
+                    if getattr(self, '_flush_task', None):
+                        self._loop.call_soon_threadsafe(self._flush_task.cancel)
+
             self._flush()
             self._conn.close()
         except Exception: pass
