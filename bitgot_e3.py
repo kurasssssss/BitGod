@@ -94,10 +94,10 @@ from bitgot_e1 import (
     FEE_MAKER, FEE_TAKER,
 )
 from bitgot_e2 import (
-    BotBrain, SwarmIntelligence, GlobalMetaPool,
+    SwarmIntelligence, MetaLearningHub as GlobalMetaPool,
     CouncilVerdict, SignalCouncil, AdversarialShield,
-    RLEngineCluster, NeuralSwarm, MicroSignalEngine,
-    TIER_ENGINE_CLASSES,
+    TierRLCluster as RLEngineCluster, NeuralSwarm, MicroSignalEngine,
+    ENGINES_BY_TIER as TIER_ENGINE_CLASSES, IntelligenceCore as BotBrain
 )
 
 _log = logging.getLogger("BITGOT·E3")
