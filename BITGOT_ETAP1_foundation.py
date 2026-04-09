@@ -2002,6 +2002,169 @@ class BITGOTDatabase:
 
     BATCH_INTERVAL = 0.5   # flush co 500ms
 
+    _SCHEMA_SQL = """
+    -- Boty
+    CREATE TABLE IF NOT EXISTS bots (
+        bot_id       INTEGER PRIMARY KEY,
+        symbol       TEXT NOT NULL,
+        market_type  TEXT,
+        tier         TEXT,
+        status       TEXT,
+        portfolio    REAL DEFAULT 0,
+        n_trades     INTEGER DEFAULT 0,
+        n_wins       INTEGER DEFAULT 0,
+        total_pnl    REAL DEFAULT 0,
+        daily_pnl    REAL DEFAULT 0,
+        win_rate     REAL DEFAULT 0.5,
+        health_score REAL DEFAULT 100,
+        genome_id    TEXT,
+        regime       TEXT,
+        promotions   INTEGER DEFAULT 0,
+        demotions    INTEGER DEFAULT 0,
+        last_updated TEXT
+    );
+
+    -- Transakcje
+    CREATE TABLE IF NOT EXISTS trades (
+        id           TEXT PRIMARY KEY,
+        bot_id       INTEGER,
+        symbol       TEXT,
+        market_type  TEXT,
+        side         TEXT,
+        entry_price  REAL,
+        exit_price   REAL,
+        qty          REAL,
+        notional     REAL,
+        leverage     INTEGER,
+        pnl          REAL,
+        pnl_pct      REAL,
+        roi_pct      REAL,
+        fees         REAL,
+        duration_ms  INTEGER,
+        exit_reason  TEXT,
+        signal_conf  REAL,
+        regime       TEXT,
+        tier         TEXT,
+        portfolio_at REAL,
+        entry_ts     INTEGER,
+        exit_ts      INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_trades_bot ON trades(bot_id, entry_ts);
+    CREATE INDEX IF NOT EXISTS idx_trades_ts  ON trades(entry_ts);
+    CREATE INDEX IF NOT EXISTS idx_trades_sym ON trades(symbol);
+
+    -- Sygnały
+    CREATE TABLE IF NOT EXISTS signals (
+        id           TEXT PRIMARY KEY,
+        bot_id       INTEGER,
+        symbol       TEXT,
+        side         TEXT,
+        confidence   REAL,
+        raw_score    REAL,
+        regime       TEXT,
+        state        TEXT,
+        leverage     INTEGER,
+        notional     REAL,
+        engines_voted INTEGER,
+        n_agree      INTEGER,
+        created_ts   REAL,
+        executed_ts  REAL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sig_ts  ON signals(created_ts);
+    CREATE INDEX IF NOT EXISTS idx_sig_bot ON signals(bot_id);
+
+    -- Błędy (Omega)
+    CREATE TABLE IF NOT EXISTS omega_errors (
+        id           TEXT PRIMARY KEY,
+        ts           REAL,
+        message      TEXT,
+        category     TEXT,
+        severity     TEXT,
+        bot_id       INTEGER,
+        module       TEXT,
+        traceback    TEXT,
+        resolved     INTEGER DEFAULT 0,
+        fix_attempts INTEGER DEFAULT 0,
+        resolved_by  TEXT
+    );
+
+    -- Akcje naprawcze
+    CREATE TABLE IF NOT EXISTS heal_actions (
+        id           TEXT PRIMARY KEY,
+        ts           REAL,
+        error_id     TEXT,
+        strategy     TEXT,
+        bot_id       INTEGER,
+        result       TEXT,
+        duration_s   REAL,
+        details      TEXT,
+        xp_earned    INTEGER DEFAULT 0
+    );
+
+    -- Wiedza o naprawach (self-learning)
+    CREATE TABLE IF NOT EXISTS heal_knowledge (
+        id           TEXT PRIMARY KEY,
+        error_pattern TEXT,
+        strategy     TEXT,
+        success_rate REAL DEFAULT 0.5,
+        n_attempts   INTEGER DEFAULT 0,
+        last_used    REAL
+    );
+
+    -- Genomy
+    CREATE TABLE IF NOT EXISTS genomes (
+        gid          TEXT PRIMARY KEY,
+        bot_id       INTEGER,
+        generation   INTEGER,
+        fitness      REAL,
+        wr           REAL,
+        n_trades     INTEGER,
+        genome_json  TEXT,
+        ts           REAL
+    );
+
+    -- Metryki globalne
+    CREATE TABLE IF NOT EXISTS metrics (
+        ts              INTEGER PRIMARY KEY,
+        total_bots      INTEGER,
+        active_positions INTEGER,
+        trades_1min     INTEGER,
+        pnl_1min        REAL,
+        total_pnl       REAL,
+        total_trades    INTEGER,
+        global_wr       REAL,
+        portfolio       REAL,
+        tier_apex_wr    REAL,
+        tier_elite_wr   REAL,
+        tier_std_wr     REAL,
+        tier_scout_wr   REAL,
+        signals_1min    INTEGER,
+        heals_1min      INTEGER,
+        omega_level     INTEGER,
+        avg_confidence  REAL
+    );
+
+    -- Portfel globalny
+    CREATE TABLE IF NOT EXISTS portfolio_history (
+        ts           INTEGER PRIMARY KEY,
+        total_capital REAL,
+        daily_pnl    REAL,
+        drawdown_pct REAL,
+        active_pos   INTEGER
+    );
+
+    -- XP / Rewards
+    CREATE TABLE IF NOT EXISTS rewards (
+        id           TEXT PRIMARY KEY,
+        ts           REAL,
+        event        TEXT,
+        xp           INTEGER,
+        total_xp     INTEGER,
+        level        INTEGER,
+        details      TEXT
+    );
+    """
+
     def __init__(self, path: Path = DB_PATH):
         self.path = path
         self._conn = sqlite3.connect(str(path), check_same_thread=False, timeout=20.0)
@@ -2024,168 +2187,7 @@ class BITGOTDatabase:
         self._log = logging.getLogger("BITGOT·DB")
 
     def _init_schema(self):
-        self._conn.executescript("""
-        -- Boty
-        CREATE TABLE IF NOT EXISTS bots (
-            bot_id       INTEGER PRIMARY KEY,
-            symbol       TEXT NOT NULL,
-            market_type  TEXT,
-            tier         TEXT,
-            status       TEXT,
-            portfolio    REAL DEFAULT 0,
-            n_trades     INTEGER DEFAULT 0,
-            n_wins       INTEGER DEFAULT 0,
-            total_pnl    REAL DEFAULT 0,
-            daily_pnl    REAL DEFAULT 0,
-            win_rate     REAL DEFAULT 0.5,
-            health_score REAL DEFAULT 100,
-            genome_id    TEXT,
-            regime       TEXT,
-            promotions   INTEGER DEFAULT 0,
-            demotions    INTEGER DEFAULT 0,
-            last_updated TEXT
-        );
-
-        -- Transakcje
-        CREATE TABLE IF NOT EXISTS trades (
-            id           TEXT PRIMARY KEY,
-            bot_id       INTEGER,
-            symbol       TEXT,
-            market_type  TEXT,
-            side         TEXT,
-            entry_price  REAL,
-            exit_price   REAL,
-            qty          REAL,
-            notional     REAL,
-            leverage     INTEGER,
-            pnl          REAL,
-            pnl_pct      REAL,
-            roi_pct      REAL,
-            fees         REAL,
-            duration_ms  INTEGER,
-            exit_reason  TEXT,
-            signal_conf  REAL,
-            regime       TEXT,
-            tier         TEXT,
-            portfolio_at REAL,
-            entry_ts     INTEGER,
-            exit_ts      INTEGER
-        );
-        CREATE INDEX IF NOT EXISTS idx_trades_bot ON trades(bot_id, entry_ts);
-        CREATE INDEX IF NOT EXISTS idx_trades_ts  ON trades(entry_ts);
-        CREATE INDEX IF NOT EXISTS idx_trades_sym ON trades(symbol);
-
-        -- Sygnały
-        CREATE TABLE IF NOT EXISTS signals (
-            id           TEXT PRIMARY KEY,
-            bot_id       INTEGER,
-            symbol       TEXT,
-            side         TEXT,
-            confidence   REAL,
-            raw_score    REAL,
-            regime       TEXT,
-            state        TEXT,
-            leverage     INTEGER,
-            notional     REAL,
-            engines_voted INTEGER,
-            n_agree      INTEGER,
-            created_ts   REAL,
-            executed_ts  REAL
-        );
-        CREATE INDEX IF NOT EXISTS idx_sig_ts  ON signals(created_ts);
-        CREATE INDEX IF NOT EXISTS idx_sig_bot ON signals(bot_id);
-
-        -- Błędy (Omega)
-        CREATE TABLE IF NOT EXISTS omega_errors (
-            id           TEXT PRIMARY KEY,
-            ts           REAL,
-            message      TEXT,
-            category     TEXT,
-            severity     TEXT,
-            bot_id       INTEGER,
-            module       TEXT,
-            traceback    TEXT,
-            resolved     INTEGER DEFAULT 0,
-            fix_attempts INTEGER DEFAULT 0,
-            resolved_by  TEXT
-        );
-
-        -- Akcje naprawcze
-        CREATE TABLE IF NOT EXISTS heal_actions (
-            id           TEXT PRIMARY KEY,
-            ts           REAL,
-            error_id     TEXT,
-            strategy     TEXT,
-            bot_id       INTEGER,
-            result       TEXT,
-            duration_s   REAL,
-            details      TEXT,
-            xp_earned    INTEGER DEFAULT 0
-        );
-
-        -- Wiedza o naprawach (self-learning)
-        CREATE TABLE IF NOT EXISTS heal_knowledge (
-            id           TEXT PRIMARY KEY,
-            error_pattern TEXT,
-            strategy     TEXT,
-            success_rate REAL DEFAULT 0.5,
-            n_attempts   INTEGER DEFAULT 0,
-            last_used    REAL
-        );
-
-        -- Genomy
-        CREATE TABLE IF NOT EXISTS genomes (
-            gid          TEXT PRIMARY KEY,
-            bot_id       INTEGER,
-            generation   INTEGER,
-            fitness      REAL,
-            wr           REAL,
-            n_trades     INTEGER,
-            genome_json  TEXT,
-            ts           REAL
-        );
-
-        -- Metryki globalne
-        CREATE TABLE IF NOT EXISTS metrics (
-            ts              INTEGER PRIMARY KEY,
-            total_bots      INTEGER,
-            active_positions INTEGER,
-            trades_1min     INTEGER,
-            pnl_1min        REAL,
-            total_pnl       REAL,
-            total_trades    INTEGER,
-            global_wr       REAL,
-            portfolio       REAL,
-            tier_apex_wr    REAL,
-            tier_elite_wr   REAL,
-            tier_std_wr     REAL,
-            tier_scout_wr   REAL,
-            signals_1min    INTEGER,
-            heals_1min      INTEGER,
-            omega_level     INTEGER,
-            avg_confidence  REAL
-        );
-
-        -- Portfel globalny
-        CREATE TABLE IF NOT EXISTS portfolio_history (
-            ts           INTEGER PRIMARY KEY,
-            total_capital REAL,
-            daily_pnl    REAL,
-            drawdown_pct REAL,
-            active_pos   INTEGER
-        );
-
-        -- XP / Rewards
-        CREATE TABLE IF NOT EXISTS rewards (
-            id           TEXT PRIMARY KEY,
-            ts           REAL,
-            event        TEXT,
-            xp           INTEGER,
-            total_xp     INTEGER,
-            level        INTEGER,
-            details      TEXT
-        );
-        """)
+        self._conn.executescript(self._SCHEMA_SQL)
         self._conn.commit()
         self._log.debug("Schema initialized")
 
