@@ -2763,6 +2763,7 @@ class FeatureBuilder:
         self._funding_h: deque = deque(maxlen=30)
         self._oi_h:      deque = deque(maxlen=30)
 
+
     def build(self, snap: MarketSnapshot,
                pos_side: str = "", pos_pnl: float = 0.0,
                pos_age_s: float = 0.0,
@@ -2775,12 +2776,31 @@ class FeatureBuilder:
         c1h = snap.arr(snap.close_1h)
         if len(c1h) < 30: return None   # za mało danych
 
+        # Extract features
+        price_feats = self._build_price_volatility(snap)
+        momentum_feats = self._build_momentum_trend(snap, price_feats['price'])
+        volume_feats = self._build_volume_orderflow(snap)
+        futures_feats = self._build_futures_regime(snap, price_feats['price'], price_feats['pc_1h'], momentum_feats['rsi_14'], momentum_feats['adx_v'], momentum_feats['hurst_v'], momentum_feats['ema_21_89'])
+        portfolio_feats = self._build_portfolio_feats(pos_side, pos_pnl, pos_age_s)
+
+        return StateVector(
+            **price_feats['vec'],
+            **momentum_feats['vec'],
+            **volume_feats['vec'],
+            **futures_feats['vec'],
+            **portfolio_feats,
+            swarm_signal=float(swarm_signal),
+            distill_signal=float(distill_signal),
+        )
+
+    def _build_price_volatility(self, snap: MarketSnapshot) -> dict:
         price = snap.price; bid = snap.bid; ask = snap.ask
         c1m = snap.arr(snap.close_1m); h1m = snap.arr(snap.high_1m)
         l1m = snap.arr(snap.low_1m);   v1m = snap.arr(snap.vol_1m)
         c5m = snap.arr(snap.close_5m); h5m = snap.arr(snap.high_5m)
         l5m = snap.arr(snap.low_5m);   v5m = snap.arr(snap.vol_5m)
         h1h = snap.arr(snap.high_1h);  l1h = snap.arr(snap.low_1h); v1h = snap.arr(snap.vol_1h)
+        c1h = snap.arr(snap.close_1h)
         c4h = snap.arr(snap.close_4h)
 
         # ── Price changes ────────────────────────────────────────────────────
@@ -2799,12 +2819,28 @@ class FeatureBuilder:
         atr_r  = atr_v / max(atr_ma, 1e-12)
         rv     = MathCore.realized_vol(c1h)
 
-        vol_ma = float(v1h[-20:].mean()) if len(v1h)>=20 else float(v1h.mean()) if len(v1h) else 1.0
-        vol_r  = float(v1h[-1]/max(vol_ma,1e-12)) if len(v1h)>0 else 1.0
-        vol_trend = float(v1h[-1]-v1h[-2])/max(v1h[-2],1e-12) if len(v1h)>=2 else 0.0
+        return {
+            'price': price,
+            'pc_1h': pc_1h,
+            'vec': {
+                'pc_1m': pc_1m, 'pc_5m': pc_5m, 'pc_15m': pc_15m, 'pc_1h': pc_1h,
+                'pc_4h': pc_4h, 'pc_24h': pc_24h,
+                'high_24h_pct': (h24-price)/max(price,1e-12),
+                'low_24h_pct': (price-l24)/max(price,1e-12),
+                'vol_1m': abs(pc_1m), 'vol_5m': abs(pc_5m),
+                'vol_of_vol': float(np.std([abs(pc_1m),abs(pc_5m),abs(pc_15m)])),
+                'atr_pct': atr_v/max(price,1e-12), 'atr_ratio': float(atr_r),
+                'realized_vol': float(np.clip(rv, 0, 3)),
+            }
+        }
+
+    def _build_momentum_trend(self, snap: MarketSnapshot, price: float) -> dict:
+        g = self.genome
+        c1m = snap.arr(snap.close_1m)
+        h1h = snap.arr(snap.high_1h);  l1h = snap.arr(snap.low_1h); v1h = snap.arr(snap.vol_1h)
+        c1h = snap.arr(snap.close_1h)
 
         # ── RSI ──────────────────────────────────────────────────────────────
-        g = self.genome
         rsi_fast  = MathCore.rsi_scalar(list(c1m),  g.rsi_fast)
         rsi_14    = MathCore.rsi_scalar(list(c1h),  g.rsi_period)
         rsi_slow  = MathCore.rsi_scalar(list(c1h),  21)
@@ -2838,38 +2874,39 @@ class FeatureBuilder:
         wr_arr  = MathCore.williams_r(h1h, l1h, c1h, 14)
         wr_v    = float(wr_arr[-1]) if not np.isnan(wr_arr[-1]) else 0.0
 
-        # ── OBV ──────────────────────────────────────────────────────────────
-        obv_arr = MathCore.obv(c1h, v1h) if len(v1h)==len(c1h) and len(c1h)>1 else np.zeros(1)
-        obv_slope = float((obv_arr[-1]-obv_arr[-5])/(abs(obv_arr[-5])+1e-12)) if len(obv_arr)>=5 else 0.0
-
         # ── VWAP ─────────────────────────────────────────────────────────────
         vwap_v = MathCore.vwap_scalar(list(h1h), list(l1h), list(c1h), list(v1h), 20)
         vwap_dev = (price - vwap_v) / max(vwap_v, 1e-12)
 
-        # ── Ichimoku ─────────────────────────────────────────────────────────
-        # (used for swing structure indicator)
-        swing = MathCore.swing_structure(h1h, l1h) if len(h1h)>=15 else {}
+        return {
+            'rsi_14': rsi_14,
+            'adx_v': adx_v,
+            'hurst_v': hurst_v,
+            'ema_21_89': ema_21_89,
+            'vwap_v': vwap_v,
+            'vec': {
+                'rsi_fast': float(rsi_fast), 'rsi_14': float(rsi_14), 'rsi_slow': float(rsi_slow),
+                'rsi_slope': float(rsi_slope), 'rsi_div': float(rsi_div),
+                'macd_hist': float(macd_h), 'macd_slope': float(macd_slope),
+                'macd_cross': int(macd_cross),
+                'stoch_k': float(stoch_k), 'stoch_d': float(stoch_d), 'wr_14': float(wr_v),
+                'ema_8_21': float(ema_8_21), 'ema_21_89': float(ema_21_89),
+                'kama_dev': float(kama_dev), 'bb_pos': float(bb_pos), 'bb_sq': float(bb_sq), 'bb_width': float(bb_width),
+                'adx': float(adx_v/100), 'adx_slope': float(adx_slope),
+                'hurst': float(hurst_v), 'autocorr': float(ac_v),
+                'price_vs_ema20': float(ema_8_21), 'price_vs_vwap': float(vwap_dev), 'vwap_dev': float(vwap_dev),
+            }
+        }
 
-        # ── Point of Control ─────────────────────────────────────────────────
-        poc_p = MathCore.poc(c1h, v1h) if len(c1h)>5 else price
-        poc_dist = (price - poc_p) / max(price, 1e-12)
+    def _build_volume_orderflow(self, snap: MarketSnapshot) -> dict:
+        v1h = snap.arr(snap.vol_1h); c1h = snap.arr(snap.close_1h)
+        vol_ma = float(v1h[-20:].mean()) if len(v1h)>=20 else float(v1h.mean()) if len(v1h) else 1.0
+        vol_r  = float(v1h[-1]/max(vol_ma,1e-12)) if len(v1h)>0 else 1.0
+        vol_trend = float(v1h[-1]-v1h[-2])/max(v1h[-2],1e-12) if len(v1h)>=2 else 0.0
 
-        # ── Funding + OI ─────────────────────────────────────────────────────
-        funding = snap.funding
-        self._funding_h.append(funding)
-        fund_pred = float(np.mean(list(self._funding_h)[-3:])) if len(self._funding_h)>=3 else funding
-        fund_arb  = float(abs(funding) > 0.001)
-        oi = snap.oi
-        self._oi_h.append(oi)
-        oi_norm = float(oi / max(np.mean(list(self._oi_h)) + 1e-12, 1)) - 1 if len(self._oi_h)>1 else 0.0
-        oi_chg_1h = float((self._oi_h[-1]-self._oi_h[-2])/max(abs(self._oi_h[-2]),1e-12)) if len(self._oi_h)>=2 else 0.0
-        oi_chg_4h = float((self._oi_h[-1]-self._oi_h[-5])/max(abs(self._oi_h[-5]),1e-12)) if len(self._oi_h)>=5 else 0.0
-        oi_price_div = oi_chg_1h - pc_1h
-
-        # ── Liquidation proxies ───────────────────────────────────────────────
-        liq_long_prox  = float(np.clip(1-rsi_14, 0, 1)) * float(abs(funding)>0.0005)
-        liq_short_prox = float(np.clip(rsi_14,   0, 1)) * float(abs(funding)>0.0005)
-        liq_cascade    = float(np.clip(abs(oi_chg_1h)*3 + abs(oi_price_div)*2, 0, 1))
+        # ── OBV ──────────────────────────────────────────────────────────────
+        obv_arr = MathCore.obv(c1h, v1h) if len(v1h)==len(c1h) and len(c1h)>1 else np.zeros(1)
+        obv_slope = float((obv_arr[-1]-obv_arr[-5])/(abs(obv_arr[-5])+1e-12)) if len(obv_arr)>=5 else 0.0
 
         # ── Order Book ────────────────────────────────────────────────────────
         bids = snap.ob_bids; asks = snap.ob_asks
@@ -2923,6 +2960,51 @@ class FeatureBuilder:
                 old_wd = (old_wb-old_ws)/(old_wb+old_ws+1e-12)
                 whale_accel = whale_delta - old_wd
 
+        return {
+            'vec': {
+                'vol_ratio': float(vol_r), 'vol_trend': float(vol_trend),
+                'obv_slope': float(obv_slope),
+                'vol_spike': float(np.clip(vol_r-1.5, 0, 5)),
+                'cvd_1m': float(cvd_1m), 'cvd_slope': float(cvd_slope),
+                'ob_imb': float(ob_imb), 'ob_depth5': float(ob_depth5),
+                'ob_spread': float(ob_spread), 'ob_entropy': float(ob_ent),
+                'vpin': float(vpin_v), 'toxic_flow': float(toxic),
+                'taker_ratio': float(taker_r), 'taker_mom': float(taker_mom),
+                'whale_delta': float(whale_delta), 'whale_accel': float(whale_accel),
+                'trade_cnt_norm': float(np.clip(len(bvh)/100, 0, 1)),
+                'mkt_impact': 0.0, 'ob_large_imb': float(ob_large),
+            }
+        }
+
+    def _build_futures_regime(self, snap: MarketSnapshot, price: float, pc_1h: float, rsi_14: float, adx_v: float, hurst_v: float, ema_21_89: float) -> dict:
+        h1h = snap.arr(snap.high_1h);  l1h = snap.arr(snap.low_1h); v1h = snap.arr(snap.vol_1h)
+        c1h = snap.arr(snap.close_1h)
+
+        # ── Ichimoku ─────────────────────────────────────────────────────────
+        # (used for swing structure indicator)
+        swing = MathCore.swing_structure(h1h, l1h) if len(h1h)>=15 else {}
+
+        # ── Point of Control ─────────────────────────────────────────────────
+        poc_p = MathCore.poc(c1h, v1h) if len(c1h)>5 else price
+        poc_dist = (price - poc_p) / max(price, 1e-12)
+
+        # ── Funding + OI ─────────────────────────────────────────────────────
+        funding = snap.funding
+        self._funding_h.append(funding)
+        fund_pred = float(np.mean(list(self._funding_h)[-3:])) if len(self._funding_h)>=3 else funding
+        fund_arb  = float(abs(funding) > 0.001)
+        oi = snap.oi
+        self._oi_h.append(oi)
+        oi_norm = float(oi / max(np.mean(list(self._oi_h)) + 1e-12, 1)) - 1 if len(self._oi_h)>1 else 0.0
+        oi_chg_1h = float((self._oi_h[-1]-self._oi_h[-2])/max(abs(self._oi_h[-2]),1e-12)) if len(self._oi_h)>=2 else 0.0
+        oi_chg_4h = float((self._oi_h[-1]-self._oi_h[-5])/max(abs(self._oi_h[-5]),1e-12)) if len(self._oi_h)>=5 else 0.0
+        oi_price_div = oi_chg_1h - pc_1h
+
+        # ── Liquidation proxies ───────────────────────────────────────────────
+        liq_long_prox  = float(np.clip(1-rsi_14, 0, 1)) * float(abs(funding)>0.0005)
+        liq_short_prox = float(np.clip(rsi_14,   0, 1)) * float(abs(funding)>0.0005)
+        liq_cascade    = float(np.clip(abs(oi_chg_1h)*3 + abs(oi_price_div)*2, 0, 1))
+
         # ── Regime (simplified) ───────────────────────────────────────────────
         regime_idx = 0.5  # default ranging
         regime_conf = 0.5
@@ -2940,71 +3022,36 @@ class FeatureBuilder:
                           if np.sign(float(c1h[i])-float(c1h[i-1]))==dir_exp)
             tc = matches / 9.0
 
-        # ── Portfolio state ───────────────────────────────────────────────────
+        return {
+            'vec': {
+                'funding': float(funding), 'funding_pred': float(fund_pred),
+                'funding_arb': float(fund_arb),
+                'oi_abs': float(np.clip(oi_norm, -1, 5)),
+                'oi_chg_1h': float(oi_chg_1h), 'oi_chg_4h': float(oi_chg_4h),
+                'oi_price_div': float(oi_price_div),
+                'liq_long_prox': float(liq_long_prox),
+                'liq_short_prox': float(liq_short_prox),
+                'liq_cascade': float(liq_cascade),
+                'regime_idx': float(regime_idx), 'regime_conf': float(regime_conf),
+                'poc_distance': float(poc_dist), 'trend_consist': float(tc),
+                'swing_hh_hl': float(swing.get("hh_hl", False)),
+                'swing_bos': float(swing.get("bos_up", swing.get("bos_dn", False))),
+            }
+        }
+
+    def _build_portfolio_feats(self, pos_side: str, pos_pnl: float, pos_age_s: float) -> dict:
+        g = self.genome
         gp = self.portfolio.snapshot
         portfolio_wr = gp.global_wr
         kelly_s = MathCore.kelly(portfolio_wr, g.tp_pct, g.sl_pct)
         pos_side_enc = 1.0 if pos_side=="long" else -1.0 if pos_side=="short" else 0.0
         pos_age_norm = float(np.clip(pos_age_s / max(g.max_hold_s, 1.0), 0, 1))
 
-        return StateVector(
-            # Price
-            pc_1m=pc_1m, pc_5m=pc_5m, pc_15m=pc_15m, pc_1h=pc_1h,
-            pc_4h=pc_4h, pc_24h=pc_24h,
-            price_vs_vwap=vwap_dev, price_vs_ema20=ema_8_21,
-            high_24h_pct=(h24-price)/max(price,1e-12),
-            low_24h_pct=(price-l24)/max(price,1e-12),
-            # Vol
-            vol_1m=abs(pc_1m), vol_5m=abs(pc_5m),
-            vol_of_vol=float(np.std([abs(pc_1m),abs(pc_5m),abs(pc_15m)])),
-            atr_pct=atr_v/max(price,1e-12), atr_ratio=float(atr_r),
-            realized_vol=float(np.clip(rv, 0, 3)),
-            bb_width=float(bb_width),
-            # Momentum
-            rsi_fast=float(rsi_fast), rsi_14=float(rsi_14), rsi_slow=float(rsi_slow),
-            rsi_slope=float(rsi_slope), rsi_div=float(rsi_div),
-            macd_hist=float(macd_h), macd_slope=float(macd_slope),
-            macd_cross=int(macd_cross),
-            stoch_k=float(stoch_k), stoch_d=float(stoch_d), wr_14=float(wr_v),
-            # Trend
-            ema_8_21=float(ema_8_21), ema_21_89=float(ema_21_89),
-            kama_dev=float(kama_dev), bb_pos=float(bb_pos), bb_sq=float(bb_sq),
-            adx=float(adx_v/100), adx_slope=float(adx_slope),
-            hurst=float(hurst_v), autocorr=float(ac_v),
-            # Volume
-            vol_ratio=float(vol_r), vol_trend=float(vol_trend),
-            obv_slope=float(obv_slope), vwap_dev=float(vwap_dev),
-            vol_spike=float(np.clip(vol_r-1.5, 0, 5)),
-            cvd_1m=float(cvd_1m), cvd_slope=float(cvd_slope),
-            # Futures
-            funding=float(funding), funding_pred=float(fund_pred),
-            funding_arb=float(fund_arb),
-            oi_abs=float(np.clip(oi_norm, -1, 5)),
-            oi_chg_1h=float(oi_chg_1h), oi_chg_4h=float(oi_chg_4h),
-            oi_price_div=float(oi_price_div),
-            liq_long_prox=float(liq_long_prox),
-            liq_short_prox=float(liq_short_prox),
-            liq_cascade=float(liq_cascade),
-            ob_imb=float(ob_imb), ob_depth5=float(ob_depth5),
-            ob_spread=float(ob_spread), ob_entropy=float(ob_ent),
-            vpin=float(vpin_v), toxic_flow=float(toxic),
-            # Order Flow
-            taker_ratio=float(taker_r), taker_mom=float(taker_mom),
-            whale_delta=float(whale_delta), whale_accel=float(whale_accel),
-            trade_cnt_norm=float(np.clip(len(bvh)/100, 0, 1)),
-            mkt_impact=0.0, ob_large_imb=float(ob_large),
-            # Regime
-            regime_idx=float(regime_idx), regime_conf=float(regime_conf),
-            poc_distance=float(poc_dist), trend_consist=float(tc),
-            swing_hh_hl=float(swing.get("hh_hl", False)),
-            swing_bos=float(swing.get("bos_up", swing.get("bos_dn", False))),
-            # Position
-            pos_side=float(pos_side_enc), pos_pnl_pct=float(pos_pnl),
-            pos_age_norm=float(pos_age_norm),
-            portfolio_wr=float(portfolio_wr), kelly_signal=float(kelly_s),
-            # Swarm
-            swarm_signal=float(swarm_signal), distill_signal=float(distill_signal),
-        )
+        return {
+            'pos_side': float(pos_side_enc), 'pos_pnl_pct': float(pos_pnl),
+            'pos_age_norm': float(pos_age_norm),
+            'portfolio_wr': float(portfolio_wr), 'kelly_signal': float(kelly_s),
+        }
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════════
