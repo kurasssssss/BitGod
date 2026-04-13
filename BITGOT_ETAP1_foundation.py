@@ -2018,10 +2018,10 @@ class BITGOTDatabase:
         self._err_q:    List[OmegaError] = []
         self._heal_q:   List[HealAction] = []
         self._metric_q: List[Dict] = []
+        self._log = logging.getLogger("BITGOT·DB")
         self._init_schema()
         self._flush_thread = threading.Thread(target=self._batch_flush_loop, daemon=True)
         self._flush_thread.start()
-        self._log = logging.getLogger("BITGOT·DB")
 
     def _init_schema(self):
         self._conn.executescript("""
@@ -2313,23 +2313,20 @@ class BITGOTDatabase:
         return row[0] if row else None
 
     def update_heal_knowledge(self, pattern: str, strategy: str, success: bool):
+        pattern = pattern[:60]
         with self._lock:
-            row = self._conn.execute(
-                "SELECT id, n_attempts, success_rate FROM heal_knowledge "
+            cur = self._conn.execute(
+                "UPDATE heal_knowledge SET "
+                "success_rate = (success_rate * n_attempts + ?) / (n_attempts + 1), "
+                "n_attempts = n_attempts + 1, "
+                "last_used = ? "
                 "WHERE error_pattern=? AND strategy=?",
-                (pattern, strategy)
-            ).fetchone()
-            if row:
-                n  = row[1] + 1
-                sr = (row[2] * row[1] + float(success)) / n
-                self._conn.execute(
-                    "UPDATE heal_knowledge SET n_attempts=?, success_rate=?, last_used=? WHERE id=?",
-                    (n, sr, _TS(), row[0])
-                )
-            else:
+                (float(success), _TS(), pattern, strategy)
+            )
+            if cur.rowcount == 0:
                 self._conn.execute(
                     "INSERT INTO heal_knowledge VALUES (?,?,?,?,?,?)",
-                    (uuid.uuid4().hex[:8], pattern[:60], strategy, float(success), 1, _TS())
+                    (uuid.uuid4().hex[:8], pattern, strategy, float(success), 1, _TS())
                 )
             self._conn.commit()
 
