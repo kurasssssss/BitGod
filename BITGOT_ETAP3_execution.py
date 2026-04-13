@@ -555,6 +555,7 @@ class SignalManager:
         self._log      = logging.getLogger("BITGOT·SignalMgr")
         # State
         self._active_symbols: Set[str] = set()  # symbols with open positions
+        self._active_bases: Counter = Counter()  # base -> count of active positions
         self._recent_signals: Dict[str, float] = {}  # symbol → last signal ts
         self._signal_history: deque = deque(maxlen=10_000)
         self._lock = asyncio.Lock()
@@ -602,13 +603,13 @@ class SignalManager:
             if sig.margin > gp.available * 0.95:
                 self._block("insufficient_capital"); return False
 
-            # 8. Correlation guard (simplified)
+            # 8. Correlation guard (optimized)
             base = sig.symbol.split("/")[0]
             blocked = self.CORR_BLOCK_PAIRS.get(base, set())
-            for act_sym in self._active_symbols:
-                act_base = act_sym.split("/")[0]
-                if act_base in blocked and base in blocked:
-                    self._block(f"correlation:{act_sym}"); return False
+            if blocked:
+                for b in blocked:
+                    if b in self._active_bases:
+                        self._block(f"correlation:{b}"); return False
 
             # ── SIGNAL APPROVED ───────────────────────────────────────────────
             executor = self.executors.get_free_executor(sig.bot_id)
@@ -617,6 +618,7 @@ class SignalManager:
 
             # Reserve
             self._active_symbols.add(sig.symbol)
+            self._active_bases[sig.symbol.split("/")[0]] += 1
             self._recent_signals[sig.symbol] = _TS()
             self.port.open_position(sig.margin)
 
@@ -636,13 +638,21 @@ class SignalManager:
                 return True
             else:
                 async with self._lock:
-                    self._active_symbols.discard(sig.symbol)
+                    if sig.symbol in self._active_symbols:
+                        self._active_symbols.discard(sig.symbol)
+                        base = sig.symbol.split("/")[0]
+                        self._active_bases[base] -= 1
+                        if self._active_bases[base] <= 0: del self._active_bases[base]
                     self.port.close_position(sig.margin, 0.0)
                 self._block("execution_failed")
                 return False
         except Exception as e:
             async with self._lock:
-                self._active_symbols.discard(sig.symbol)
+                if sig.symbol in self._active_symbols:
+                    self._active_symbols.discard(sig.symbol)
+                    base = sig.symbol.split("/")[0]
+                    self._active_bases[base] -= 1
+                    if self._active_bases[base] <= 0: del self._active_bases[base]
                 self.port.close_position(sig.margin, 0.0)
             self._log.error(f"Signal execute error {sig.symbol}: {e}")
             return False
@@ -650,7 +660,12 @@ class SignalManager:
     def release_symbol(self, symbol: str):
         """Wywoływane gdy pozycja zamknięta."""
         with suppress(Exception):
-            self._active_symbols.discard(symbol)
+            if symbol in self._active_symbols:
+                self._active_symbols.discard(symbol)
+                base = symbol.split("/")[0]
+                self._active_bases[base] -= 1
+                if self._active_bases[base] <= 0:
+                    del self._active_bases[base]
 
     def _block(self, reason: str):
         self._n_blocked += 1
