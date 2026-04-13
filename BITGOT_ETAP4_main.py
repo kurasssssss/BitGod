@@ -732,6 +732,7 @@ class BITGOTOrchestrator:
         for bot_id, brain in list(self.brains.items())[:100]:
             try: brain.save_all(); self.db.save_genome(brain.genome); saved += 1
             except Exception: pass
+        self.db.flush()
         self._log.info(f"💾 Final checkpoint: {saved} brains saved")
         # Print final report
         self._final_report()
